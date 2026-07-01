@@ -93,9 +93,26 @@ export const getSkills = () => tauriInvoke<import('@/types').Skill[]>('get_skill
 /** 获取 API 配置列表 */
 export const getApiConfigs = () => tauriInvoke<import('@/types').ApiConfig[]>('get_api_configs');
 
+/** 获取 API 配置列表（别名） */
+export const listApiConfigs = () => tauriInvoke<import('@/types').ApiConfig[]>('list_api_configs');
+
 /** 保存 API 配置 */
-export const saveApiConfig = (data: Omit<import('@/types').ApiConfig, 'id'>) =>
-  tauriInvoke<import('@/types').ApiConfig>('save_api_config', { data });
+export const saveApiConfig = (data: Omit<import('@/types').ApiConfig, 'id'> & { id?: string }) =>
+  tauriInvoke<import('@/types').ApiConfig>('save_api_config', {
+    id: data.id,
+    name: data.name,
+    base_url: data.base_url,
+    api_key: data.api_key,
+    model_thinking: data.model_thinking,
+    model_writing: data.model_writing,
+    is_default: data.is_default,
+  });
+
+/** 删除 API 配置 */
+export const deleteApiConfig = (id: string) => tauriInvoke<void>('delete_api_config', { id });
+
+/** 设置默认 API 配置 */
+export const setDefaultApiConfig = (id: string) => tauriInvoke<void>('set_default_api_config', { id });
 
 // ===== 续写相关 =====
 

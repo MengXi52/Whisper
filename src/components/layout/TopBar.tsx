@@ -1,17 +1,19 @@
 /** 顶部栏组件 */
-import React from 'react';
+import React, { useState } from 'react';
 import { Settings, Moon, Sun, Maximize2, Minimize2 } from 'lucide-react';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { PHASE_LABELS } from '@/types';
 import type { WritingPhase } from '@/types';
 import { clsx } from 'clsx';
+import { ApiConfigDialog } from '@/components/settings/ApiConfigDialog';
 
 const phases: WritingPhase[] = ['ideation', 'planning', 'writing', 'editing'];
 
 export const TopBar: React.FC = () => {
   const { phase, setPhase, theme, toggleTheme, focusMode, toggleFocusMode } = useUIStore();
   const currentProject = useProjectStore((s) => s.currentProject);
+  const [settingsOpen, setSettingsOpen] = useState(false);
 
   return (
     <header className="h-12 flex items-center justify-between px-4 border-b border-border bg-bg-secondary shrink-0">
@@ -57,12 +59,15 @@ export const TopBar: React.FC = () => {
           {focusMode ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
         </button>
         <button
+          onClick={() => setSettingsOpen(true)}
           className="p-2 rounded-md text-text-tertiary hover:text-text-primary hover:bg-bg-hover transition-colors"
           title="设置"
         >
           <Settings size={16} />
         </button>
       </div>
+
+      <ApiConfigDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 };

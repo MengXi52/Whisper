@@ -3,6 +3,13 @@ import { create } from 'zustand';
 import { listen } from '@tauri-apps/api/event';
 import type { Conversation, Message, Skill } from '@/types';
 import * as tauri from '@/utils/tauri';
+import { useApiConfigStore } from '@/stores/apiConfigStore';
+
+/** 获取当前聊天模型名称 */
+const getModel = (): string => {
+  const defaultConfig = useApiConfigStore.getState().defaultConfig;
+  return defaultConfig?.model_writing || 'deepseek-chat';
+};
 
 interface ChatState {
   /** 当前会话 */
@@ -106,7 +113,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
       await tauri.sendMessage(
         currentConversation.id,
         content,
-        'deepseek-chat',
+        getModel(),
         activeSkillIds
       );
     } catch (e) {
@@ -125,7 +132,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           conversation_id: currentConversation.id,
           role: 'assistant',
           content: streamingContent,
-          model: 'deepseek-chat',
+          model: getModel(),
           created_at: new Date().toISOString(),
         };
         set((state) => ({
@@ -177,7 +184,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             conversation_id: currentConversation.id,
             role: 'assistant',
             content: streamingContent,
-            model: 'deepseek-chat',
+            model: getModel(),
             created_at: new Date().toISOString(),
           };
           return {

@@ -5,15 +5,17 @@ import { ToastContainer } from '@/components/common/Toast';
 import { useUIStore } from '@/stores/uiStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { useChatStore } from '@/stores/chatStore';
+import { useApiConfigStore } from '@/stores/apiConfigStore';
 import './App.css';
 
 const App: React.FC = () => {
   const { theme } = useUIStore();
 
-  /* 初始化：加载项目列表和技能列表 */
+  /* 初始化：加载项目列表、技能列表和 API 配置 */
   useEffect(() => {
     useProjectStore.getState().loadProjects();
     useChatStore.getState().loadSkills();
+    useApiConfigStore.getState().loadApiConfigs();
   }, []);
 
   return (
