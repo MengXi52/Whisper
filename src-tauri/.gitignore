@@ -1,0 +1,36 @@
+﻿# Build outputs
+target/
+
+# Tauri generated files
+gen/
+
+# Windows build artifacts
+*.exe
+*.exe.manifest
+*.pdb
+
+# Test files
+test_*.exe
+test_*.pdb
+test_*.rs
+
+# Build logs
+*.stdout.txt
+*.stderr.txt
+check-stdout.txt
+check-stderr.txt
+
+# Cargo lock for applications (keep Cargo.lock for libraries)
+# Uncomment if this is a binary project:
+# Cargo.lock
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

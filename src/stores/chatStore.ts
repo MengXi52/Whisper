@@ -1,0 +1,201 @@
+/** 聊天状态管理 */
+import { create } from 'zustand';
+import { listen } from '@tauri-apps/api/event';
+import type { Conversation, Message, Skill } from '@/types';
+import * as tauri from '@/utils/tauri';
+
+interface ChatState {
+  /** 当前会话 */
+  currentConversation: Conversation | null;
+  /** 消息列表 */
+  messages: Message[];
+  /** 是否正在生成 */
+  isGenerating: boolean;
+  /** 当前流式消息内容（正在生成中的内容） */
+  streamingContent: string;
+  /** 可用技能列表 */
+  skills: Skill[];
+  /** 当前激活的技能ID列表 */
+  activeSkillIds: string[];
+  /** 加载状态 */
+  loading: boolean;
+  /** 错误信息 */
+  error: string | null;
+
+  /** 创建新会话 */
+  createConversation: (data: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  /** 选择会话 */
+  selectConversation: (conversation: Conversation) => Promise<void>;
+  /** 删除会话 */
+  deleteConversation: (id: string) => Promise<void>;
+  /** 发送消息 */
+  sendMessage: (content: string) => Promise<void>;
+  /** 中断生成 */
+  abortGeneration: () => Promise<void>;
+  /** 加载技能列表 */
+  loadSkills: () => Promise<void>;
+  /** 切换技能激活状态 */
+  toggleSkill: (skillId: string) => void;
+  /** 初始化 SSE 监听 */
+  initChunkListener: () => Promise<() => void>;
+  /** 清除错误 */
+  clearError: () => void;
+}
+
+export const useChatStore = create<ChatState>((set, get) => ({
+  currentConversation: null,
+  messages: [],
+  isGenerating: false,
+  streamingContent: '',
+  skills: [],
+  activeSkillIds: [],
+  loading: false,
+  error: null,
+
+  createConversation: async (data) => {
+    try {
+      const conversation = await tauri.createConversation(data);
+      set({ currentConversation: conversation, messages: [] });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  selectConversation: async (conversation) => {
+    set({ loading: true, error: null });
+    try {
+      const messages = await tauri.getMessages(conversation.id);
+      set({ currentConversation: conversation, messages, loading: false });
+    } catch (e) {
+      set({ error: String(e), loading: false });
+    }
+  },
+
+  deleteConversation: async (id) => {
+    try {
+      await tauri.deleteConversation(id);
+      set((state) => ({
+        currentConversation: state.currentConversation?.id === id ? null : state.currentConversation,
+        messages: state.currentConversation?.id === id ? [] : state.messages,
+      }));
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  sendMessage: async (content) => {
+    const { currentConversation, activeSkillIds } = get();
+    if (!currentConversation) return;
+
+    /* 先将用户消息添加到列表 */
+    const userMessage: Message = {
+      id: crypto.randomUUID(),
+      conversation_id: currentConversation.id,
+      role: 'user',
+      content,
+      model: '',
+      created_at: new Date().toISOString(),
+    };
+    set((state) => ({
+      messages: [...state.messages, userMessage],
+      isGenerating: true,
+      streamingContent: '',
+    }));
+
+    try {
+      await tauri.sendMessage(
+        currentConversation.id,
+        content,
+        'deepseek-chat',
+        activeSkillIds
+      );
+    } catch (e) {
+      set({ error: String(e), isGenerating: false });
+    }
+  },
+
+  abortGeneration: async () => {
+    try {
+      await tauri.abortGeneration();
+      /* 将已流式接收的内容保存为一条消息 */
+      const { streamingContent, currentConversation } = get();
+      if (streamingContent && currentConversation) {
+        const aiMessage: Message = {
+          id: crypto.randomUUID(),
+          conversation_id: currentConversation.id,
+          role: 'assistant',
+          content: streamingContent,
+          model: 'deepseek-chat',
+          created_at: new Date().toISOString(),
+        };
+        set((state) => ({
+          messages: [...state.messages, aiMessage],
+          streamingContent: '',
+          isGenerating: false,
+        }));
+      } else {
+        set({ isGenerating: false, streamingContent: '' });
+      }
+    } catch (e) {
+      set({ error: String(e), isGenerating: false });
+    }
+  },
+
+  loadSkills: async () => {
+    try {
+      const skills = await tauri.getSkills();
+      set({ skills });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  toggleSkill: (skillId) => {
+    set((state) => ({
+      activeSkillIds: state.activeSkillIds.includes(skillId)
+        ? state.activeSkillIds.filter((id) => id !== skillId)
+        : [...state.activeSkillIds, skillId],
+    }));
+  },
+
+  initChunkListener: async () => {
+    const unlisten = await listen<{ id: string; content: string }>('chat:chunk', (event) => {
+      const { content } = event.payload;
+      set((state) => {
+        const newStreamingContent = state.streamingContent + content;
+        return { streamingContent: newStreamingContent };
+      });
+    });
+
+    /* 同时监听流结束事件 */
+    const unlistenEnd = await listen<string>('chat:end', () => {
+      set((state) => {
+        const { streamingContent, currentConversation } = state;
+        if (streamingContent && currentConversation) {
+          const aiMessage: Message = {
+            id: crypto.randomUUID(),
+            conversation_id: currentConversation.id,
+            role: 'assistant',
+            content: streamingContent,
+            model: 'deepseek-chat',
+            created_at: new Date().toISOString(),
+          };
+          return {
+            messages: [...state.messages, aiMessage],
+            streamingContent: '',
+            isGenerating: false,
+          };
+        }
+        return { isGenerating: false, streamingContent: '' };
+      });
+    });
+
+    /* 返回清理函数 */
+    return () => {
+      unlisten();
+      unlistenEnd();
+    };
+  },
+
+  clearError: () => set({ error: null }),
+}));
