@@ -164,7 +164,7 @@ export const DynamicPanel: React.FC = () => {
   };
 
   return (
-    <aside className="w-[300px] h-full flex flex-col bg-bg-panel border-l border-border shrink-0 overflow-hidden">
+    <aside className="h-full flex flex-col bg-bg-panel border-l border-border overflow-hidden">
       {/* 面板标题 + 折叠按钮 */}
       <div className="flex items-center justify-between px-3 py-2 border-b border-border">
         <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">

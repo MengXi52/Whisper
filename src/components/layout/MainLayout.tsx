@@ -1,5 +1,7 @@
 /** 三栏布局组件 */
 import React from 'react';
+import { ChevronLeft } from 'lucide-react';
+import { clsx } from 'clsx';
 import { useUIStore } from '@/stores/uiStore';
 import { TopBar } from './TopBar';
 import { StatusBar } from './StatusBar';
@@ -9,7 +11,7 @@ import { ChatView } from '@/components/chat/ChatView';
 import { WritingEditor } from '@/components/editor/WritingEditor';
 
 export const MainLayout: React.FC = () => {
-  const { phase, sidebarOpen, panelOpen, focusMode } = useUIStore();
+  const { phase, sidebarOpen, panelOpen, focusMode, togglePanel } = useUIStore();
 
   /* 根据阶段决定中间区域内容 */
   const isWritingPhase = phase === 'writing' || phase === 'editing';
@@ -20,7 +22,7 @@ export const MainLayout: React.FC = () => {
       {!focusMode && <TopBar />}
 
       {/* 主体三栏区域 */}
-      <div className="flex-1 flex overflow-hidden">
+      <div className="flex-1 flex overflow-hidden relative">
         {/* 左侧栏 */}
         {sidebarOpen && !focusMode && <Sidebar />}
 
@@ -30,7 +32,22 @@ export const MainLayout: React.FC = () => {
         </main>
 
         {/* 右侧动态面板 */}
-        {panelOpen && !focusMode && <DynamicPanel />}
+        {!focusMode && (
+          <div className={clsx('panel-container shrink-0', !panelOpen && 'collapsed')}>
+            <DynamicPanel />
+          </div>
+        )}
+
+        {/* 面板收起时的展开按钮 */}
+        {!panelOpen && !focusMode && (
+          <button
+            onClick={togglePanel}
+            className="panel-expand-btn"
+            title="展开右侧面板"
+          >
+            <ChevronLeft size={14} />
+          </button>
+        )}
       </div>
 
       {/* 底部状态栏 */}
