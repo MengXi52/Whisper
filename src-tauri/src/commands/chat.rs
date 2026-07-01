@@ -250,22 +250,33 @@ pub fn get_messages(
 pub fn create_conversation(
     db: State<'_, DbState>,
     project_id: Option<String>,
+    title: Option<String>,
     phase: Option<String>,
     skill_ids: Option<Vec<String>>,
-) -> Result<String, String> {
+) -> Result<Conversation, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let phase = phase.unwrap_or_else(|| "ideation".to_string());
-    let skill_ids_str = serde_json::to_string(&skill_ids.unwrap_or_default())
+    let title = title.unwrap_or_default();
+    let skill_ids_str = serde_json::to_string(skill_ids.as_ref().unwrap_or(&vec![]))
         .map_err(|e| format!("序列化技能ID失败: {}", e))?;
 
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     conn.execute(
         "INSERT INTO conversations (id, project_id, title, phase, skill_ids, context_chapter_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![id, project_id, "", phase, skill_ids_str, Option::<String>::None, now, now],
+        rusqlite::params![id, project_id, title, phase, skill_ids_str, Option::<String>::None, now, now],
     ).map_err(|e| format!("创建会话失败: {}", e))?;
 
-    Ok(id)
+    Ok(Conversation {
+        id,
+        project_id,
+        title,
+        phase,
+        skill_ids: skill_ids.unwrap_or_default(),
+        context_chapter_id: None,
+        created_at: now.clone(),
+        updated_at: now,
+    })
 }
 
 /// 删除会话
@@ -286,12 +297,15 @@ pub fn list_conversations(db: State<'_, DbState>) -> Result<Vec<Conversation>, S
         .map_err(|e| format!("准备查询失败: {}", e))?;
     let rows = stmt
         .query_map([], |row| {
+            let skill_ids_str: String = row.get(4)?;
+            let skill_ids: Vec<String> = serde_json::from_str(&skill_ids_str)
+                .unwrap_or_default();
             Ok(Conversation {
                 id: row.get(0)?,
                 project_id: row.get(1)?,
                 title: row.get(2)?,
                 phase: row.get(3)?,
-                skill_ids: row.get(4)?,
+                skill_ids,
                 context_chapter_id: row.get(5)?,
                 created_at: row.get(6)?,
                 updated_at: row.get(7)?,

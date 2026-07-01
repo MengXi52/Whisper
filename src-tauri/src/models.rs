@@ -54,10 +54,36 @@ pub struct Conversation {
     pub project_id: Option<String>,
     pub title: String,
     pub phase: String,
-    pub skill_ids: String,
+    #[serde(with = "conv_serde")]
+    pub skill_ids: Vec<String>,
     pub context_chapter_id: Option<String>,
     pub created_at: String,
     pub updated_at: String,
+}
+
+/* 自定义序列化：skill_ids 在 DB 中存为 JSON TEXT，但对外序列化为 string[] */
+mod conv_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+
+    pub fn serialize<S: Serializer>(val: &Vec<String>, serializer: S) -> Result<S::Ok, S::Error> {
+        val.serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D: Deserializer<'de>>(deserializer: D) -> Result<Vec<String>, D::Error> {
+        let s = serde_json::Value::deserialize(deserializer)?;
+        match s {
+            serde_json::Value::Array(arr) => {
+                arr.into_iter()
+                    .map(|v| v.as_str().map(|s| s.to_string())
+                        .ok_or_else(|| serde::de::Error::custom("expected string")))
+                    .collect()
+            }
+            serde_json::Value::String(s) => {
+                serde_json::from_str(&s).map_err(serde::de::Error::custom)
+            }
+            _ => Err(serde::de::Error::custom("expected array or string")),
+        }
+    }
 }
 
 /// 消息

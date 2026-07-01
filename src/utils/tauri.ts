@@ -76,6 +76,7 @@ export const abortGeneration = () => tauriInvoke<void>('abort_generation');
 export const createConversation = (data: Omit<import('@/types').Conversation, 'id' | 'created_at' | 'updated_at'>) =>
   tauriInvoke<import('@/types').Conversation>('create_conversation', {
     project_id: data.project_id,
+    title: data.title,
     phase: data.phase,
     skill_ids: data.skill_ids,
   });
