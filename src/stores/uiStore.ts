@@ -42,7 +42,7 @@ export const useUIStore = create<UIState>((set) => ({
   phase: 'ideation',
   sidebarOpen: true,
   panelOpen: true,
-  theme: 'dark',
+  theme: 'light',
   focusMode: false,
   currentModel: 'deepseek-chat',
   tokenCount: 0,
