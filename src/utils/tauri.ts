@@ -74,7 +74,15 @@ export const abortGeneration = () => tauriInvoke<void>('abort_generation');
 
 /** 创建会话 */
 export const createConversation = (data: Omit<import('@/types').Conversation, 'id' | 'created_at' | 'updated_at'>) =>
-  tauriInvoke<import('@/types').Conversation>('create_conversation', { data });
+  tauriInvoke<import('@/types').Conversation>('create_conversation', {
+    project_id: data.project_id,
+    phase: data.phase,
+    skill_ids: data.skill_ids,
+  });
+
+/** 获取会话列表 */
+export const listConversations = () =>
+  tauriInvoke<import('@/types').Conversation[]>('list_conversations');
 
 /** 获取会话消息 */
 export const getMessages = (conversationId: string) =>

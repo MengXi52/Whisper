@@ -1,7 +1,7 @@
 use crate::db::DbState;
 use crate::llm::client::CancellationTokenState;
 use crate::llm::prompt;
-use crate::models::{ChunkEvent, Message, SendMessageParams};
+use crate::models::{ChunkEvent, Conversation, Message, SendMessageParams};
 use serde_json;
 use tauri::{AppHandle, Emitter, State};
 
@@ -276,4 +276,28 @@ pub fn delete_conversation(db: State<'_, DbState>, id: String) -> Result<(), Str
     conn.execute("DELETE FROM conversations WHERE id = ?1", rusqlite::params![id])
         .map_err(|e| format!("删除会话失败: {}", e))?;
     Ok(())
+}
+
+/// 获取会话列表（按更新时间倒序）
+#[tauri::command]
+pub fn list_conversations(db: State<'_, DbState>) -> Result<Vec<Conversation>, String> {
+    let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    let mut stmt = conn
+        .prepare("SELECT id, project_id, title, phase, skill_ids, context_chapter_id, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
+        .map_err(|e| format!("准备查询失败: {}", e))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Conversation {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                title: row.get(2)?,
+                phase: row.get(3)?,
+                skill_ids: row.get(4)?,
+                context_chapter_id: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        })
+        .map_err(|e| format!("查询会话失败: {}", e))?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("读取会话失败: {}", e))
 }

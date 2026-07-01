@@ -11,10 +11,11 @@ import './App.css';
 const App: React.FC = () => {
   const { theme } = useUIStore();
 
-  /* 初始化：加载项目列表、技能列表和 API 配置 */
+  /* 初始化：加载项目列表、技能列表、对话历史和 API 配置 */
   useEffect(() => {
     useProjectStore.getState().loadProjects();
     useChatStore.getState().loadSkills();
+    useChatStore.getState().loadConversations();
     useApiConfigStore.getState().loadApiConfigs();
   }, []);
 

@@ -12,6 +12,8 @@ const getModel = (): string => {
 };
 
 interface ChatState {
+  /** 会话列表 */
+  conversations: Conversation[];
   /** 当前会话 */
   currentConversation: Conversation | null;
   /** 消息列表 */
@@ -29,7 +31,11 @@ interface ChatState {
   /** 错误信息 */
   error: string | null;
 
+  /** 加载会话列表 */
+  loadConversations: () => Promise<void>;
   /** 创建新会话 */
+  newConversation: () => Promise<void>;
+  /** 创建新会话（带参数） */
   createConversation: (data: Omit<Conversation, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
   /** 选择会话 */
   selectConversation: (conversation: Conversation) => Promise<void>;
@@ -50,6 +56,7 @@ interface ChatState {
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
+  conversations: [],
   currentConversation: null,
   messages: [],
   isGenerating: false,
@@ -58,6 +65,32 @@ export const useChatStore = create<ChatState>((set, get) => ({
   activeSkillIds: [],
   loading: false,
   error: null,
+
+  loadConversations: async () => {
+    try {
+      const conversations = await tauri.listConversations();
+      set({ conversations });
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
+
+  newConversation: async () => {
+    try {
+      const conversation = await tauri.createConversation({
+        project_id: null,
+        title: '',
+        phase: 'ideation',
+        skill_ids: [],
+        context_chapter_id: null,
+      });
+      set({ currentConversation: conversation, messages: [], activeSkillIds: [] });
+      /* 刷新列表 */
+      await get().loadConversations();
+    } catch (e) {
+      set({ error: String(e) });
+    }
+  },
 
   createConversation: async (data) => {
     try {
@@ -72,7 +105,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const messages = await tauri.getMessages(conversation.id);
-      set({ currentConversation: conversation, messages, loading: false });
+      set({ currentConversation: conversation, messages, loading: false, activeSkillIds: [] });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
@@ -85,6 +118,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
         currentConversation: state.currentConversation?.id === id ? null : state.currentConversation,
         messages: state.currentConversation?.id === id ? [] : state.messages,
       }));
+      /* 刷新列表 */
+      await get().loadConversations();
     } catch (e) {
       set({ error: String(e) });
     }
