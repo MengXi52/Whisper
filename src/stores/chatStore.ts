@@ -201,42 +201,42 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   initChunkListener: async () => {
-    const unlisten = await listen<{ id: string; content: string }>('chat:chunk', (event) => {
-      const { content } = event.payload;
+    const unlisten = await listen<{ id: string; content: string; done: boolean }>('chat:chunk', (event) => {
+      const { content, done } = event.payload;
+
+      if (done) {
+        /* 流式响应完成，保存消息 */
+        set((state) => {
+          const { streamingContent, currentConversation } = state;
+          if (streamingContent && currentConversation) {
+            const aiMessage: Message = {
+              id: crypto.randomUUID(),
+              conversation_id: currentConversation.id,
+              role: 'assistant',
+              content: streamingContent,
+              model: getModel(),
+              created_at: new Date().toISOString(),
+            };
+            return {
+              messages: [...state.messages, aiMessage],
+              streamingContent: '',
+              isGenerating: false,
+            };
+          }
+          return { isGenerating: false, streamingContent: '' };
+        });
+        return;
+      }
+
+      /* 追加流式内容 */
       set((state) => {
         const newStreamingContent = state.streamingContent + content;
         return { streamingContent: newStreamingContent };
       });
     });
 
-    /* 同时监听流结束事件 */
-    const unlistenEnd = await listen<string>('chat:end', () => {
-      set((state) => {
-        const { streamingContent, currentConversation } = state;
-        if (streamingContent && currentConversation) {
-          const aiMessage: Message = {
-            id: crypto.randomUUID(),
-            conversation_id: currentConversation.id,
-            role: 'assistant',
-            content: streamingContent,
-            model: getModel(),
-            created_at: new Date().toISOString(),
-          };
-          return {
-            messages: [...state.messages, aiMessage],
-            streamingContent: '',
-            isGenerating: false,
-          };
-        }
-        return { isGenerating: false, streamingContent: '' };
-      });
-    });
-
     /* 返回清理函数 */
-    return () => {
-      unlisten();
-      unlistenEnd();
-    };
+    return unlisten;
   },
 
   clearError: () => set({ error: null }),
