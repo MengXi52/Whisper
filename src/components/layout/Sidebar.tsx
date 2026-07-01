@@ -82,20 +82,20 @@ export const Sidebar: React.FC = () => {
           {historyOpen && (
             <div className="ml-1 space-y-0.5">
               {conversations.length === 0 ? (
-                <div className="px-4 py-3 text-xs text-text-tertiary">暂无对话</div>
+                <div className="px-3 py-2 text-[11px] text-text-tertiary">暂无对话</div>
               ) : (
                 conversations.map((conv) => (
                   <div
                     key={conv.id}
                     className={clsx(
-                      'group flex items-center gap-1 px-2 py-1.5 rounded-md text-sm cursor-pointer transition-colors',
+                      'group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs cursor-pointer transition-all',
                       currentConversation?.id === conv.id
-                        ? 'bg-bg-active text-accent'
-                        : 'text-text-primary hover:bg-bg-hover'
+                        ? 'bg-accent/10 text-accent font-medium'
+                        : 'text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary'
                     )}
                     onClick={() => selectConversation(conv)}
                   >
-                    <MessageSquare size={12} className="shrink-0 opacity-50" />
+                    <MessageSquare size={11} className="shrink-0 opacity-40" />
                     <span className="truncate flex-1">
                       {conv.title || '新对话'}
                     </span>
@@ -107,7 +107,7 @@ export const Sidebar: React.FC = () => {
                       className="shrink-0 p-0.5 rounded text-text-tertiary hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
                       title="删除对话"
                     >
-                      <Trash2 size={12} />
+                      <Trash2 size={11} />
                     </button>
                   </div>
                 ))
