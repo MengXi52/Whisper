@@ -2,7 +2,6 @@
 import React, { useState, useRef, useCallback } from 'react';
 import { Send, Square, AtSign } from 'lucide-react';
 import { useChatStore } from '@/stores/chatStore';
-import { Button } from '@/components/common/Button';
 import { clsx } from 'clsx';
 
 export const ChatInput: React.FC = () => {
@@ -68,10 +67,10 @@ export const ChatInput: React.FC = () => {
   );
 
   return (
-    <div className="relative border-t border-border bg-bg-secondary px-4 py-3">
+    <div className="relative bg-bg-secondary px-3 py-2.5 border-t border-border">
       {/* 技能 @提及下拉 */}
       {mentionOpen && filteredSkills.length > 0 && (
-        <div className="absolute bottom-full left-4 right-4 mb-1 bg-bg-primary border border-border rounded-lg shadow-lg overflow-hidden z-10">
+        <div className="absolute bottom-full left-3 right-3 mb-2 bg-bg-primary border border-border rounded-xl shadow-lg overflow-hidden z-10">
           {filteredSkills.map((skill) => (
             <button
               key={skill.id}
@@ -90,20 +89,20 @@ export const ChatInput: React.FC = () => {
 
       {/* 已激活技能标签 */}
       {activeSkillIds.length > 0 && (
-        <div className="flex flex-wrap gap-1 mb-2">
+        <div className="flex flex-wrap gap-1.5 mb-2 px-1">
           {activeSkillIds.map((id) => {
             const skill = skills.find((s) => s.id === id);
             if (!skill) return null;
             return (
               <span
                 key={id}
-                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-accent-light text-accent"
+                className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs bg-accent/10 text-accent"
               >
                 <AtSign size={10} />
                 {skill.name}
                 <button
                   onClick={() => toggleSkill(id)}
-                  className="ml-0.5 hover:text-accent-hover"
+                  className="ml-0.5 opacity-60 hover:opacity-100 transition-opacity"
                 >
                   ×
                 </button>
@@ -114,7 +113,7 @@ export const ChatInput: React.FC = () => {
       )}
 
       {/* 输入区域 */}
-      <div className="flex items-end gap-2">
+      <div className="flex items-center gap-2">
         <div className="flex-1 relative">
           <textarea
             ref={textareaRef}
@@ -123,24 +122,32 @@ export const ChatInput: React.FC = () => {
             onKeyDown={handleKeyDown}
             placeholder="输入消息，@ 技能名 启用技能…"
             rows={1}
-            className="w-full resize-none rounded-lg border border-border bg-bg-primary px-3 py-2 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent focus:border-transparent transition-shadow"
+            className="w-full resize-none rounded-xl border border-border bg-bg-primary px-4 py-2.5 pr-12 text-sm text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-2 focus:ring-accent/40 focus:border-accent transition-all"
           />
         </div>
 
         {isGenerating ? (
-          <Button variant="danger" size="md" onClick={abortGeneration} icon={<Square size={14} />}>
-            停止
-          </Button>
+          <button
+            onClick={abortGeneration}
+            className="shrink-0 w-9 h-9 flex items-center justify-center rounded-xl bg-error/10 text-error hover:bg-error/20 transition-colors"
+            title="停止生成"
+          >
+            <Square size={16} />
+          </button>
         ) : (
-          <Button
-            variant="primary"
-            size="md"
+          <button
             onClick={handleSend}
             disabled={!input.trim()}
-            icon={<Send size={14} />}
+            className={clsx(
+              'shrink-0 w-9 h-9 flex items-center justify-center rounded-xl transition-all',
+              input.trim()
+                ? 'bg-accent text-white hover:bg-accent/90 shadow-sm'
+                : 'bg-transparent text-text-tertiary cursor-not-allowed'
+            )}
+            title="发送"
           >
-            发送
-          </Button>
+            <Send size={16} />
+          </button>
         )}
       </div>
     </div>
