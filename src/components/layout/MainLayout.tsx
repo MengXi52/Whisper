@@ -1,6 +1,6 @@
 /** 三栏布局组件 */
 import React from 'react';
-import { ChevronLeft } from 'lucide-react';
+import { ChevronLeft, Minimize2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useUIStore } from '@/stores/uiStore';
 import { TopBar } from './TopBar';
@@ -11,15 +11,26 @@ import { ChatView } from '@/components/chat/ChatView';
 import { WritingEditor } from '@/components/editor/WritingEditor';
 
 export const MainLayout: React.FC = () => {
-  const { phase, sidebarOpen, panelOpen, focusMode, togglePanel } = useUIStore();
+  const { phase, sidebarOpen, panelOpen, focusMode, togglePanel, toggleFocusMode } = useUIStore();
 
   /* 根据阶段决定中间区域内容 */
   const isWritingPhase = phase === 'writing' || phase === 'editing';
 
   return (
-    <div className="h-full w-full flex flex-col bg-bg-primary">
+    <div className="h-full w-full flex flex-col bg-bg-primary relative">
       {/* 顶部栏 */}
       {!focusMode && <TopBar />}
+
+      {/* 专注模式退出按钮 */}
+      {focusMode && (
+        <button
+          onClick={toggleFocusMode}
+          className="focus-exit-btn"
+          title="退出专注模式"
+        >
+          <Minimize2 size={16} />
+        </button>
+      )}
 
       {/* 主体三栏区域 */}
       <div className="flex-1 flex overflow-hidden relative">

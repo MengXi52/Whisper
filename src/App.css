@@ -108,6 +108,32 @@
   display: none;
 }
 
+/* 专注模式退出按钮 */
+.focus-exit-btn {
+  position: absolute;
+  top: 12px;
+  right: 12px;
+  z-index: 100;
+  width: 36px;
+  height: 36px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--color-bg-secondary);
+  border: 1px solid var(--color-border);
+  border-radius: 8px;
+  color: var(--color-text-tertiary);
+  cursor: pointer;
+  transition: color 0.2s, background-color 0.2s;
+  opacity: 0.3;
+}
+
+.focus-exit-btn:hover {
+  opacity: 1;
+  color: var(--color-text-primary);
+  background: var(--color-bg-hover);
+}
+
 /* ===== 拖拽排序 ===== */
 .drag-over {
   border-top: 2px solid var(--color-accent);
