@@ -1,7 +1,7 @@
 use crate::db::DbState;
 use crate::llm::client::CancellationTokenState;
 use crate::llm::prompt;
-use crate::models::{ChunkEvent, Conversation, Message, SendMessageParams};
+use crate::models::{ChunkEvent, Conversation, Message};
 use serde_json;
 use tauri::{AppHandle, Emitter, State};
 
@@ -58,25 +58,33 @@ pub async fn send_message(
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("读取历史消息失败: {}", e))?
     };
 
-    // 获取技能的 system prompt
-    let skill_prompts = if let Some(ref sids) = skill_ids {
+    // 获取技能的 system prompt 和 tools 定义
+    let (skill_prompts, tools): (Vec<String>, Option<Vec<serde_json::Value>>) = if let Some(ref sids) = skill_ids {
         let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
         let mut prompts = Vec::new();
+        let mut all_tools = Vec::new();
         for sid in sids {
-            let sp: String = conn
+            let (sp, tools_str): (String, String) = conn
                 .query_row(
-                    "SELECT system_prompt FROM skills WHERE id = ?1",
+                    "SELECT system_prompt, tools FROM skills WHERE id = ?1",
                     rusqlite::params![sid],
-                    |row| row.get(0),
+                    |row| Ok((row.get(0)?, row.get(1)?)),
                 )
                 .unwrap_or_default();
             if !sp.is_empty() {
                 prompts.push(sp);
             }
+            // 解析工具的 JSON 定义
+            if !tools_str.is_empty() && tools_str != "[]" {
+                match serde_json::from_str::<Vec<serde_json::Value>>(&tools_str) {
+                    Ok(tool_defs) => all_tools.extend(tool_defs),
+                    Err(e) => eprintln!("解析技能工具定义失败 (skill_id={}): {}", sid, e),
+                }
+            }
         }
-        prompts
+        (prompts, if all_tools.is_empty() { None } else { Some(all_tools) })
     } else {
-        Vec::new()
+        (Vec::new(), None)
     };
 
     // 获取设定卡摘要（如果有项目）
@@ -177,6 +185,7 @@ pub async fn send_message(
         &api_key,
         &use_model,
         messages,
+        tools,
         &conversation_id,
         &assistant_msg_id,
         &cancel_token.0,

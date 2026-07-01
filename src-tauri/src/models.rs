@@ -146,6 +146,8 @@ pub struct ChatRequest {
     pub stream: bool,
     pub temperature: Option<f64>,
     pub max_tokens: Option<i64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tools: Option<Vec<serde_json::Value>>,
 }
 
 /// SSE chunk 事件数据
