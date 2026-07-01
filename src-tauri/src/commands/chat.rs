@@ -11,12 +11,11 @@ pub async fn send_message(
     app: AppHandle,
     db: State<'_, DbState>,
     cancel_token: State<'_, CancellationTokenState>,
-    params: SendMessageParams,
+    conversation_id: String,
+    content: String,
+    model: Option<String>,
+    skill_ids: Option<Vec<String>>,
 ) -> Result<String, String> {
-    let conversation_id = params.conversation_id.clone();
-    let content = params.content.clone();
-    let model = params.model.clone();
-    let skill_ids = params.skill_ids.clone();
 
     // 保存用户消息到数据库
     let user_msg_id = uuid::Uuid::new_v4().to_string();
