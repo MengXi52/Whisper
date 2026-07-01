@@ -70,12 +70,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const conversations = await tauri.listConversations();
       set({ conversations });
+
+      /* 如果没有对话，自动创建一个；否则自动选中最近的一个 */
+      const { currentConversation } = get();
+      if (conversations.length === 0) {
+        await get().newConversation();
+      } else if (!currentConversation) {
+        await get().selectConversation(conversations[0]);
+      }
     } catch (e) {
       set({ error: String(e) });
     }
   },
 
   newConversation: async () => {
+    const { currentConversation, messages } = get();
+
+    /* 如果当前是空对话（没有消息），直接复用，不创建新的 */
+    if (currentConversation && messages.length === 0) {
+      return;
+    }
+
     try {
       const conversation = await tauri.createConversation({
         project_id: null,
