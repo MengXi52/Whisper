@@ -20,9 +20,9 @@ interface SettingsState {
   /** 选择设定卡进行编辑 */
   selectCard: (card: SettingCard | null) => void;
   /** 创建设定卡 */
-  createSettingCard: (data: Omit<SettingCard, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  createSettingCard: (projectId: string, cardType: string, name: string, fields: string) => Promise<void>;
   /** 更新设定卡 */
-  updateSettingCard: (id: string, data: Partial<SettingCard>) => Promise<void>;
+  updateSettingCard: (id: string, name?: string, fields?: string, cardType?: string) => Promise<void>;
   /** 删除设定卡 */
   deleteSettingCard: (id: string) => Promise<void>;
   /** 加载版本历史 */
@@ -41,7 +41,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   loadSettingCards: async (projectId) => {
     set({ loading: true, error: null });
     try {
-      const settingCards = await tauri.getSettingCards(projectId);
+      const rawCards = await tauri.getSettingCards(projectId);
+      // 将 fields JSON 字符串转为对象
+      const settingCards = rawCards.map((card) => ({
+        ...card,
+        fields: typeof card.fields === 'string' ? JSON.parse(card.fields) : card.fields,
+      }));
       set({ settingCards, loading: false });
     } catch (e) {
       set({ error: String(e), loading: false });
@@ -55,23 +60,32 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
     }
   },
 
-  createSettingCard: async (data) => {
+  createSettingCard: async (projectId, cardType, name, fields) => {
     set({ loading: true, error: null });
     try {
-      const card = await tauri.createSettingCard(data);
-      set((state) => ({ settingCards: [...state.settingCards, card], loading: false }));
+      const id = await tauri.createSettingCard(projectId, cardType, name, fields);
+      /* 重新加载设定卡列表 */
+      await get().loadSettingCards(projectId);
+      /* 选中新创建的设定卡 */
+      const newCard = get().settingCards.find((c) => c.id === id);
+      if (newCard) {
+        set({ currentCard: newCard, loading: false });
+      } else {
+        set({ loading: false });
+      }
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
 
-  updateSettingCard: async (id, data) => {
+  updateSettingCard: async (id, name, fields, cardType) => {
     try {
-      const updated = await tauri.updateSettingCard(id, data);
-      set((state) => ({
-        settingCards: state.settingCards.map((c) => (c.id === id ? updated : c)),
-        currentCard: state.currentCard?.id === id ? updated : state.currentCard,
-      }));
+      await tauri.updateSettingCard(id, name, fields, cardType);
+      /* 重新加载当前项目的设定卡列表 */
+      const projectId = get().settingCards.find((c) => c.id === id)?.project_id;
+      if (projectId) {
+        await get().loadSettingCards(projectId);
+      }
     } catch (e) {
       set({ error: String(e) });
     }
@@ -91,7 +105,12 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
 
   loadVersions: async (cardId) => {
     try {
-      const versions = await tauri.getSettingCardVersions(cardId);
+      const rawVersions = await tauri.getSettingCardVersions(cardId);
+      // 将 fields JSON 字符串转为对象
+      const versions = rawVersions.map((v) => ({
+        ...v,
+        fields: typeof v.fields === 'string' ? JSON.parse(v.fields) : v.fields,
+      }));
       set({ versions });
     } catch (e) {
       set({ error: String(e) });

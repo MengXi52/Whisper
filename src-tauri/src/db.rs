@@ -124,14 +124,9 @@ fn create_tables(conn: &Connection) -> Result<(), String> {
 
 /// 初始化内置技能数据
 fn init_builtin_skills(conn: &Connection) -> Result<(), String> {
-    // 检查是否已有内置技能
-    let count: i64 = conn
-        .query_row("SELECT COUNT(*) FROM skills WHERE is_builtin = 1", [], |row| row.get(0))
-        .map_err(|e| format!("查询技能失败: {}", e))?;
-
-    if count > 0 {
-        return Ok(());
-    }
+    // 清除旧的内置技能，确保工具定义始终与代码同步
+    conn.execute("DELETE FROM skills WHERE is_builtin = 1", [])
+        .map_err(|e| format!("清除旧技能失败: {}", e))?;
 
     let now = chrono::Utc::now().to_rfc3339();
 
@@ -256,7 +251,8 @@ fn init_builtin_skills(conn: &Connection) -> Result<(), String> {
                         },
                         "card_type": {
                             "type": "string",
-                            "description": "设定卡类型（可选）：人物、世界观、势力、物品等"
+                            "description": "设定卡类型（可选）：character-人物, faction-势力, world-世界观/地点, item-物品, skill_system-技能体系, event-事件",
+                            "enum": ["character", "faction", "world", "item", "skill_system", "event"]
                         }
                     },
                     "required": ["project_id"]
@@ -281,7 +277,8 @@ fn init_builtin_skills(conn: &Connection) -> Result<(), String> {
                         },
                         "card_type": {
                             "type": "string",
-                            "description": "设定卡类型：人物、世界观、势力、物品、组织等"
+                            "description": "设定卡类型：character-人物, faction-势力, world-世界观/地点, item-物品, skill_system-技能体系, event-事件",
+                            "enum": ["character", "faction", "world", "item", "skill_system", "event"]
                         },
                         "fields": {
                             "type": "string",

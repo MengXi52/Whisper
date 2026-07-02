@@ -12,7 +12,7 @@ export const SettingCardVersionList: React.FC = () => {
   const handleRollback = async (versionId: string) => {
     const version = versions.find((v) => v.id === versionId);
     if (!version) return;
-    await updateSettingCard(currentCard.id, { fields: version.fields });
+    await updateSettingCard(currentCard.id, undefined, JSON.stringify(version.fields));
   };
 
   return (

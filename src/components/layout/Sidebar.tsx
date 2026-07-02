@@ -10,13 +10,15 @@ import { Button } from '@/components/common/Button';
 import { clsx } from 'clsx';
 
 export const Sidebar: React.FC = () => {
-  const { currentProject, projects, selectProject } = useProjectStore();
+  const { currentProject, projects, selectProject, createProject } = useProjectStore();
   const { phase } = useUIStore();
   const { conversations, currentConversation, selectConversation, newConversation, deleteConversation } = useChatStore();
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
   const [historyOpen, setHistoryOpen] = useState(true);
+  const [showNewProjectInput, setShowNewProjectInput] = useState(false);
+  const [newProjectName, setNewProjectName] = useState('');
 
   return (
     <aside className="w-[240px] h-full flex flex-col bg-bg-sidebar border-r border-border shrink-0 overflow-hidden">
@@ -44,24 +46,85 @@ export const Sidebar: React.FC = () => {
         {/* 项目下拉列表 */}
         {projectSelectorOpen && (
           <div className="mt-1 rounded-md border border-border bg-bg-primary shadow-md overflow-hidden">
-            {projects.length === 0 ? (
-              <div className="px-3 py-2 text-xs text-text-tertiary">暂无项目</div>
-            ) : (
-              projects.map((project) => (
-                <button
-                  key={project.id}
-                  onClick={() => {
-                    selectProject(project);
-                    setProjectSelectorOpen(false);
+            {/* 新建项目输入框 */}
+            {showNewProjectInput ? (
+              <div className="px-2 py-2">
+                <input
+                  type="text"
+                  value={newProjectName}
+                  onChange={(e) => setNewProjectName(e.target.value)}
+                  placeholder="输入项目名称"
+                  className="w-full px-2 py-1 text-sm border border-border rounded bg-bg-secondary text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+                  autoFocus
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && newProjectName.trim()) {
+                      createProject(newProjectName.trim(), '', 'general');
+                      setNewProjectName('');
+                      setShowNewProjectInput(false);
+                      setProjectSelectorOpen(false);
+                    }
+                    if (e.key === 'Escape') {
+                      setShowNewProjectInput(false);
+                      setNewProjectName('');
+                    }
                   }}
-                  className={clsx(
-                    'w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover transition-colors',
-                    currentProject?.id === project.id && 'bg-bg-active text-accent'
-                  )}
+                />
+                <div className="flex gap-1 mt-1.5">
+                  <button
+                    onClick={() => {
+                      if (newProjectName.trim()) {
+                        createProject(newProjectName.trim(), '', 'general');
+                        setNewProjectName('');
+                        setShowNewProjectInput(false);
+                        setProjectSelectorOpen(false);
+                      }
+                    }}
+                    className="px-2 py-1 text-xs bg-accent text-text-inverse rounded hover:bg-accent-hover transition-colors"
+                  >
+                    创建
+                  </button>
+                  <button
+                    onClick={() => {
+                      setShowNewProjectInput(false);
+                      setNewProjectName('');
+                    }}
+                    className="px-2 py-1 text-xs bg-bg-hover text-text-secondary rounded hover:bg-bg-active transition-colors"
+                  >
+                    取消
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <>
+                {/* 项目列表 */}
+                {projects.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-text-tertiary">暂无项目</div>
+                ) : (
+                  projects.map((project) => (
+                    <button
+                      key={project.id}
+                      onClick={() => {
+                        selectProject(project);
+                        setProjectSelectorOpen(false);
+                      }}
+                      className={clsx(
+                        'w-full text-left px-3 py-1.5 text-sm hover:bg-bg-hover transition-colors',
+                        currentProject?.id === project.id && 'bg-bg-active text-accent'
+                      )}
+                    >
+                      {project.name}
+                    </button>
+                  ))
+                )}
+                {/* 新建项目按钮 */}
+                <button
+                  onClick={() => setShowNewProjectInput(true)}
+                  className="w-full flex items-center gap-1.5 px-3 py-1.5 text-sm text-accent hover:bg-bg-hover transition-colors border-t border-border"
                 >
-                  {project.name}
+                  <Plus size={14} />
+                  <span>新建项目</span>
                 </button>
-              ))
+              </>
             )}
           </div>
         )}

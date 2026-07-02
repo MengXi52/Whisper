@@ -1,4 +1,5 @@
 use crate::models::{ChatMessage, ChatRequest, ChunkEvent};
+use crate::{log_debug, log_error, log_info, log_warn};
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use reqwest::Client;
@@ -43,16 +44,19 @@ pub async fn stream_chat(
     loop {
         tool_round += 1;
         if tool_round > max_tool_rounds {
+            log_error!("STREAM", "达到最大工具调用轮次限制 ({})", max_tool_rounds);
             return Err("工具调用次数超过最大限制".to_string());
         }
 
+        log_info!("STREAM", "--- LLM 请求轮次 {} ---", tool_round);
+        log_info!("STREAM", "消息数: {} | 工具数: {}", messages.len(), tools.as_ref().map(|t| t.len()).unwrap_or(0));
         let request_body = ChatRequest {
             model: model.to_string(),
             messages: messages.clone(),
             stream: true,
             temperature: Some(0.7),
             max_tokens: Some(4096),
-            tools: if tool_round == 1 { tools.clone() } else { None },
+            tools: tools.clone(),
         };
 
         let response = client
@@ -64,23 +68,31 @@ pub async fn stream_chat(
             .await
             .map_err(|e| format!("API请求失败: {}", e))?;
 
+        log_info!("STREAM", "API响应状态: {}", response.status());
+
         if !response.status().is_success() {
             let status = response.status();
             let body = response.text().await.unwrap_or_default();
+            log_error!("STREAM", "API返回错误 ({}): {}", status, body);
             return Err(format!("API返回错误 ({}): {}", status, body));
         }
 
         let stream = response.bytes_stream().eventsource();
         let mut full_content = String::new();
         let mut tool_calls_accumulated: Vec<ToolCallResult> = Vec::new();
+        let mut chunk_count = 0;
+        let mut content_len = 0;
 
         tokio::pin!(stream);
 
         while let Some(event) = stream.next().await {
+            chunk_count += 1;
+
             // 检查取消令牌
             {
                 let cancelled = cancel_token.lock().map_err(|e| format!("获取取消令牌锁失败: {}", e))?;
                 if *cancelled {
+                    log_info!("STREAM", "用户取消生成 (收到 {} chunks)", chunk_count);
                     break;
                 }
             }
@@ -89,12 +101,11 @@ pub async fn stream_chat(
                 Ok(event) => {
                     let data = event.data.trim();
 
-                    // 流结束标记
                     if data == "[DONE]" {
+                        log_debug!("STREAM", "收到 [DONE] 标记 (共 {} chunks)", chunk_count);
                         break;
                     }
 
-                    // 解析 SSE 数据
                     match serde_json::from_str::<serde_json::Value>(data) {
                         Ok(json) => {
                             if let Some(choices) = json.get("choices") {
@@ -104,6 +115,7 @@ pub async fn stream_chat(
                                         if let Some(content) = delta.get("content") {
                                             if let Some(text) = content.as_str() {
                                                 full_content.push_str(text);
+                                                content_len += text.len();
 
                                                 let chunk_event = ChunkEvent {
                                                     conversation_id: conversation_id.to_string(),
@@ -124,7 +136,6 @@ pub async fn stream_chat(
                                                     let tc_type = tc.get("type").and_then(|v| v.as_str()).unwrap_or("");
                                                     let func = tc.get("function");
 
-                                                    // 确保数组足够大
                                                     while tool_calls_accumulated.len() <= index {
                                                         tool_calls_accumulated.push(ToolCallResult {
                                                             tool_call_id: String::new(),
@@ -160,26 +171,61 @@ pub async fn stream_chat(
                                     if let Some(finish_reason) = first_choice.get("finish_reason") {
                                         if let Some(reason) = finish_reason.as_str() {
                                             if reason == "tool_calls" {
+                                                log_info!("STREAM", "LLM 返回 tool_calls，共 {} 个 (本轮已收内容: {} 字符, {} chunks)",
+                                                    tool_calls_accumulated.len(), content_len, chunk_count);
+                                                for (i, tc) in tool_calls_accumulated.iter().enumerate() {
+                                                    log_info!("STREAM", "  tool_call[{}]: {} | 参数: {}", i, tc.name, tc.arguments);
+                                                }
+
                                                 // 执行工具调用
                                                 let tool_results = execute_tools(db, &tool_calls_accumulated)?;
+
+                                                log_info!("STREAM", "工具执行完成，共 {} 个结果", tool_results.len());
+                                                for (i, r) in tool_results.iter().enumerate() {
+                                                    let preview = if r.chars().count() > 100 {
+                                                        let truncated: String = r.chars().take(100).collect();
+                                                        format!("{}...", truncated)
+                                                    } else {
+                                                        r.clone()
+                                                    };
+                                                    log_info!("STREAM", "  结果[{}]: {}", i, preview);
+                                                }
+
+                                                // 重构 tool_calls JSON 数组
+                                                let tool_calls_json: Vec<serde_json::Value> = tool_calls_accumulated.iter().map(|tc| {
+                                                    serde_json::json!({
+                                                        "id": tc.tool_call_id,
+                                                        "type": "function",
+                                                        "function": {
+                                                            "name": tc.name,
+                                                            "arguments": tc.arguments
+                                                        }
+                                                    })
+                                                }).collect();
 
                                                 // 添加助手消息（包含 tool_calls）
                                                 messages.push(ChatMessage {
                                                     role: "assistant".to_string(),
                                                     content: full_content.clone(),
+                                                    tool_calls: Some(tool_calls_json),
+                                                    tool_call_id: None,
                                                 });
 
-                                                // 添加工具结果消息
-                                                for result in tool_results.iter() {
+                                                // 添加工具结果消息（含 tool_call_id 关联）
+                                                for (tc, result) in tool_calls_accumulated.iter().zip(tool_results.iter()) {
                                                     messages.push(ChatMessage {
                                                         role: "tool".to_string(),
                                                         content: result.clone(),
+                                                        tool_calls: None,
+                                                        tool_call_id: Some(tc.tool_call_id.clone()),
                                                     });
                                                 }
 
-                                                // 继续下一轮请求
                                                 full_content.clear();
+                                                tool_calls_accumulated.clear();
                                                 break;
+                                            } else if reason == "stop" {
+                                                log_debug!("STREAM", "收到 finish_reason=stop (本轮内容: {} 字符)", content_len);
                                             }
                                         }
                                     }
@@ -187,12 +233,13 @@ pub async fn stream_chat(
                             }
                         }
                         Err(_) => {
+                            log_debug!("STREAM", "SSE解析跳过非JSON数据: {}", &data.chars().take(80).collect::<String>());
                             continue;
                         }
                     }
                 }
                 Err(e) => {
-                    eprintln!("SSE解析错误: {:?}", e);
+                    log_warn!("STREAM", "SSE解析错误: {:?}", e);
                     continue;
                 }
             }
@@ -200,10 +247,12 @@ pub async fn stream_chat(
 
         // 如果没有工具调用，返回最终内容
         if !tool_calls_accumulated.is_empty() {
-            // 有工具调用，继续循环
+            log_info!("STREAM", "有 {} 个 tool_calls，进入第 {} 轮 (累积消息: {} 条)",
+                tool_calls_accumulated.len(), tool_round + 1, messages.len());
             continue;
         }
 
+        log_info!("STREAM", "LLM 返回最终内容 | 共 {} 字符 | 总轮次: {} | 总 chunks: {}", full_content.len(), tool_round, chunk_count);
         return Ok(full_content);
     }
 }
@@ -212,6 +261,7 @@ pub async fn stream_chat(
 fn execute_tools(db: &Mutex<Connection>, tool_calls: &[ToolCallResult]) -> Result<Vec<String>, String> {
     let mut results = Vec::new();
     for tc in tool_calls {
+        log_info!("TOOL", "执行工具: {} | 参数: {}", tc.name, tc.arguments);
         let result = match tc.name.as_str() {
             "query_outline" => tool_query_outline(db, &tc.arguments),
             "query_chapter" => tool_query_chapter(db, &tc.arguments),
@@ -227,6 +277,8 @@ fn execute_tools(db: &Mutex<Connection>, tool_calls: &[ToolCallResult]) -> Resul
             "use_skill" => tool_use_skill(db, &tc.arguments),
             _ => format!("工具 '{}' 未实现，参数: {}", tc.name, tc.arguments),
         };
+        let preview = result.chars().take(200).collect::<String>();
+        log_info!("TOOL", "工具 {} 执行结果(前200字): {}", tc.name, preview);
         results.push(result);
     }
     Ok(results)
@@ -401,6 +453,12 @@ fn tool_create_chapter(db: &Mutex<Connection>, args: &str) -> String {
     let sort_order = args.sort_order.unwrap_or(0);
     let word_count = content.chars().count() as i64;
 
+    // 确保项目存在（自动创建）
+    conn.execute(
+        "INSERT OR IGNORE INTO projects (id, name, description, genre, created_at, updated_at) VALUES (?1, ?2, '', '', ?3, ?3)",
+        rusqlite::params![args.project_id, args.title, now],
+    ).ok();
+
     match conn.execute(
         "INSERT INTO chapters (id, project_id, parent_id, title, content, sort_order, status, word_count, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
         rusqlite::params![id, args.project_id, args.parent_id, args.title, content, sort_order, "draft", word_count, now, now],
@@ -495,6 +553,12 @@ fn tool_create_setting_card(db: &Mutex<Connection>, args: &str) -> String {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
     let fields = args.fields.unwrap_or_else(|| "{}".to_string());
+
+    // 确保项目存在（自动创建）
+    conn.execute(
+        "INSERT OR IGNORE INTO projects (id, name, description, genre, created_at, updated_at) VALUES (?1, ?2, '', '', ?3, ?3)",
+        rusqlite::params![args.project_id, args.name, now],
+    ).ok();
 
     match conn.execute(
         "INSERT INTO setting_cards (id, project_id, card_type, name, fields, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
@@ -633,8 +697,9 @@ fn tool_query_conversations(db: &Mutex<Connection>, args: &str) -> String {
     let mut output = String::from("【对话历史】\n");
     for (role, content) in messages {
         let role_label = if role == "user" { "用户" } else { "助手" };
-        let preview = if content.len() > 200 {
-            format!("{}...", &content[..200])
+        let preview = if content.chars().count() > 200 {
+            let truncated: String = content.chars().take(200).collect();
+            format!("{}...", truncated)
         } else {
             content
         };

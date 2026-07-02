@@ -22,9 +22,9 @@ interface ProjectState {
   /** 选择项目 */
   selectProject: (project: Project) => Promise<void>;
   /** 创建项目 */
-  createProject: (data: Omit<Project, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  createProject: (name: string, description: string, genre: string) => Promise<void>;
   /** 更新项目 */
-  updateProject: (id: string, data: Partial<Project>) => Promise<void>;
+  updateProject: (id: string, name?: string, description?: string, genre?: string) => Promise<void>;
   /** 删除项目 */
   deleteProject: (id: string) => Promise<void>;
   /** 加载章节列表 */
@@ -32,9 +32,9 @@ interface ProjectState {
   /** 选择章节 */
   selectChapter: (chapter: Chapter | null) => void;
   /** 创建章节 */
-  createChapter: (data: Omit<Chapter, 'id' | 'created_at' | 'updated_at'>) => Promise<void>;
+  createChapter: (projectId: string, parentId: string | null, title: string, sortOrder?: number) => Promise<void>;
   /** 更新章节 */
-  updateChapter: (id: string, data: Partial<Chapter>) => Promise<void>;
+  updateChapter: (id: string, title?: string, content?: string, status?: string, parentId?: string | null) => Promise<void>;
   /** 删除章节 */
   deleteChapter: (id: string) => Promise<void>;
   /** 清除错误 */
@@ -64,23 +64,29 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     await get().loadChapters(project.id);
   },
 
-  createProject: async (data) => {
+  createProject: async (name, description, genre) => {
     set({ loading: true, error: null });
     try {
-      const project = await tauri.createProject(data);
-      set((state) => ({ projects: [...state.projects, project], loading: false }));
+      const id = await tauri.createProject(name, description, genre);
+      /* 重新加载项目列表 */
+      await get().loadProjects();
+      /* 选中新创建的项目 */
+      const newProject = get().projects.find((p) => p.id === id);
+      if (newProject) {
+        set({ currentProject: newProject, loading: false });
+      } else {
+        set({ loading: false });
+      }
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
 
-  updateProject: async (id, data) => {
+  updateProject: async (id, name, description, genre) => {
     try {
-      const updated = await tauri.updateProject(id, data);
-      set((state) => ({
-        projects: state.projects.map((p) => (p.id === id ? updated : p)),
-        currentProject: state.currentProject?.id === id ? updated : state.currentProject,
-      }));
+      await tauri.updateProject(id, name, description, genre);
+      /* 重新加载项目列表 */
+      await get().loadProjects();
     } catch (e) {
       set({ error: String(e) });
     }
@@ -114,23 +120,32 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ currentChapter: chapter });
   },
 
-  createChapter: async (data) => {
+  createChapter: async (projectId, parentId, title, sortOrder) => {
     set({ loading: true, error: null });
     try {
-      const chapter = await tauri.createChapter(data);
-      set((state) => ({ chapters: [...state.chapters, chapter], loading: false }));
+      const id = await tauri.createChapter(projectId, parentId, title, sortOrder);
+      /* 重新加载章节列表 */
+      await get().loadChapters(projectId);
+      /* 选中新创建的章节 */
+      const newChapter = get().chapters.find((c) => c.id === id);
+      if (newChapter) {
+        set({ currentChapter: newChapter, loading: false });
+      } else {
+        set({ loading: false });
+      }
     } catch (e) {
       set({ error: String(e), loading: false });
     }
   },
 
-  updateChapter: async (id, data) => {
+  updateChapter: async (id, title, content, status, parentId) => {
     try {
-      const updated = await tauri.updateChapter(id, data);
-      set((state) => ({
-        chapters: state.chapters.map((c) => (c.id === id ? updated : c)),
-        currentChapter: state.currentChapter?.id === id ? updated : state.currentChapter,
-      }));
+      await tauri.updateChapter(id, title, content, status, parentId);
+      /* 重新加载当前项目的章节列表 */
+      const projectId = get().currentProject?.id;
+      if (projectId) {
+        await get().loadChapters(projectId);
+      }
     } catch (e) {
       set({ error: String(e) });
     }

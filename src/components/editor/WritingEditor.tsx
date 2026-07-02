@@ -35,10 +35,7 @@ export const WritingEditor: React.FC = () => {
     setContent(newContent);
     /* 自动保存（防抖由上层处理） */
     if (currentChapter) {
-      updateChapter(currentChapter.id, {
-        content: newContent,
-        word_count: newContent.length,
-      });
+      updateChapter(currentChapter.id, undefined, newContent);
     }
   };
 
@@ -99,7 +96,7 @@ export const WritingEditor: React.FC = () => {
           <input
             type="text"
             value={currentChapter.title}
-            onChange={(e) => updateChapter(currentChapter.id, { title: e.target.value })}
+            onChange={(e) => updateChapter(currentChapter.id, e.target.value)}
             className="w-full bg-transparent text-xl font-serif font-bold text-text-primary placeholder:text-text-tertiary focus:outline-none mb-4"
             placeholder="章节标题"
           />
@@ -124,11 +121,10 @@ export const WritingEditor: React.FC = () => {
             <div className="flex gap-2 mt-3">
               <button
                 onClick={() => {
-                  setContent((prev) => prev + '\n' + streamingContent);
+                  const newContent = content + '\n' + streamingContent;
+                  setContent(newContent);
                   if (currentChapter) {
-                    updateChapter(currentChapter.id, {
-                      content: content + '\n' + streamingContent,
-                    });
+                    updateChapter(currentChapter.id, undefined, newContent);
                   }
                 }}
                 className="px-3 py-1 text-xs bg-accent text-text-inverse rounded-md hover:bg-accent-hover transition-colors"

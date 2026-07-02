@@ -26,15 +26,12 @@ export const OutlineTree: React.FC = () => {
 
   const handleAddChapter = async () => {
     if (!currentProject) return;
-    await createChapter({
-      project_id: currentProject.id,
-      parent_id: null,
-      title: `第${chapters.length + 1}章`,
-      content: '',
-      sort_order: chapters.length,
-      status: 'draft',
-      word_count: 0,
-    });
+    await createChapter(
+      currentProject.id,
+      null,
+      `第${chapters.length + 1}章`,
+      chapters.length
+    );
   };
 
   const handleDelete = async (id: string) => {

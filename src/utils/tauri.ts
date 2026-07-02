@@ -9,18 +9,18 @@ export async function tauriInvoke<T>(command: string, args?: Record<string, unkn
 // ===== 项目相关 =====
 
 /** 获取项目列表 */
-export const getProjects = () => tauriInvoke<import('@/types').Project[]>('get_projects');
+export const getProjects = () => tauriInvoke<import('@/types').Project[]>('list_projects');
 
 /** 获取单个项目 */
 export const getProject = (id: string) => tauriInvoke<import('@/types').Project>('get_project', { id });
 
 /** 创建项目 */
-export const createProject = (data: Omit<import('@/types').Project, 'id' | 'created_at' | 'updated_at'>) =>
-  tauriInvoke<import('@/types').Project>('create_project', { data });
+export const createProject = (name: string, description: string, genre: string) =>
+  tauriInvoke<string>('create_project', { name, description, genre });
 
 /** 更新项目 */
-export const updateProject = (id: string, data: Partial<import('@/types').Project>) =>
-  tauriInvoke<import('@/types').Project>('update_project', { id, data });
+export const updateProject = (id: string, name?: string, description?: string, genre?: string) =>
+  tauriInvoke<void>('update_project', { id, name, description, genre });
 
 /** 删除项目 */
 export const deleteProject = (id: string) => tauriInvoke<void>('delete_project', { id });
@@ -29,15 +29,15 @@ export const deleteProject = (id: string) => tauriInvoke<void>('delete_project',
 
 /** 获取项目的章节列表 */
 export const getChapters = (projectId: string) =>
-  tauriInvoke<import('@/types').Chapter[]>('get_chapters', { projectId });
+  tauriInvoke<import('@/types').Chapter[]>('list_chapters', { projectId });
 
 /** 创建章节 */
-export const createChapter = (data: Omit<import('@/types').Chapter, 'id' | 'created_at' | 'updated_at'>) =>
-  tauriInvoke<import('@/types').Chapter>('create_chapter', { data });
+export const createChapter = (projectId: string, parentId: string | null, title: string, sortOrder?: number) =>
+  tauriInvoke<string>('create_chapter', { projectId, parentId, title, sortOrder });
 
 /** 更新章节 */
-export const updateChapter = (id: string, data: Partial<import('@/types').Chapter>) =>
-  tauriInvoke<import('@/types').Chapter>('update_chapter', { id, data });
+export const updateChapter = (id: string, title?: string, content?: string, status?: string, parentId?: string | null) =>
+  tauriInvoke<void>('update_chapter', { id, title, content, status, parentId });
 
 /** 删除章节 */
 export const deleteChapter = (id: string) => tauriInvoke<void>('delete_chapter', { id });
@@ -46,22 +46,32 @@ export const deleteChapter = (id: string) => tauriInvoke<void>('delete_chapter',
 
 /** 获取项目的设定卡列表 */
 export const getSettingCards = (projectId: string) =>
-  tauriInvoke<import('@/types').SettingCard[]>('get_setting_cards', { projectId });
+  tauriInvoke<import('@/types').SettingCard[]>('list_setting_cards', { projectId });
 
 /** 创建设定卡 */
-export const createSettingCard = (data: Omit<import('@/types').SettingCard, 'id' | 'created_at' | 'updated_at'>) =>
-  tauriInvoke<import('@/types').SettingCard>('create_setting_card', { data });
+export const createSettingCard = (
+  projectId: string,
+  cardType: string,
+  name: string,
+  fields: string // JSON string
+) =>
+  tauriInvoke<string>('create_setting_card', { projectId, cardType, name, fields });
 
 /** 更新设定卡 */
-export const updateSettingCard = (id: string, data: Partial<import('@/types').SettingCard>) =>
-  tauriInvoke<import('@/types').SettingCard>('update_setting_card', { id, data });
+export const updateSettingCard = (
+  id: string,
+  name?: string,
+  fields?: string, // JSON string
+  cardType?: string
+) =>
+  tauriInvoke<void>('update_setting_card', { id, name, fields, cardType });
 
 /** 删除设定卡 */
 export const deleteSettingCard = (id: string) => tauriInvoke<void>('delete_setting_card', { id });
 
 /** 获取设定卡版本历史 */
 export const getSettingCardVersions = (cardId: string) =>
-  tauriInvoke<import('@/types').SettingCardVersion[]>('get_setting_card_versions', { cardId });
+  tauriInvoke<import('@/types').SettingCardVersion[]>('list_setting_card_versions', { cardId });
 
 // ===== 聊天相关 =====
 

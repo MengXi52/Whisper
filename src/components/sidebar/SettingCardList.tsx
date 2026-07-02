@@ -40,12 +40,12 @@ export const SettingCardList: React.FC = () => {
 
   const handleCreate = async (type: CardType) => {
     if (!currentProject) return;
-    await createSettingCard({
-      project_id: currentProject.id,
-      card_type: type,
-      name: `新${CARD_TYPE_LABELS[type]}`,
-      fields: {},
-    });
+    await createSettingCard(
+      currentProject.id,
+      type,
+      `新${CARD_TYPE_LABELS[type]}`,
+      '{}' // 空 JSON 对象
+    );
   };
 
   return (

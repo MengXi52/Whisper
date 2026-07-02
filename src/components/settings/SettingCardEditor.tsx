@@ -33,7 +33,7 @@ export const SettingCardEditor: React.FC = () => {
   };
 
   const handleSave = async () => {
-    await updateSettingCard(currentCard.id, { name, fields });
+    await updateSettingCard(currentCard.id, name, JSON.stringify(fields));
   };
 
   const handleCancel = () => {

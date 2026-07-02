@@ -2,6 +2,7 @@ use crate::db::DbState;
 use crate::llm::client::CancellationTokenState;
 use crate::llm::prompt;
 use crate::models::{ChunkEvent, Conversation, Message};
+use crate::{log_debug, log_error, log_info, log_section, log_warn};
 use serde_json;
 use tauri::{AppHandle, Emitter, State};
 
@@ -16,6 +17,9 @@ pub async fn send_message(
     model: Option<String>,
     skill_ids: Option<Vec<String>>,
 ) -> Result<String, String> {
+
+    log_section!("send_message");
+    log_info!("STEP1", "收到用户消息 | 对话ID: {} | 内容(前50字): {}", conversation_id, &content.chars().take(50).collect::<String>());
 
     // 保存用户消息到数据库
     let user_msg_id = uuid::Uuid::new_v4().to_string();
@@ -33,6 +37,7 @@ pub async fn send_message(
             rusqlite::params![now, conversation_id],
         ).map_err(|e| format!("更新会话时间失败: {}", e))?;
     }
+    log_info!("STEP1", "用户消息已保存 | 消息ID: {}", user_msg_id);
 
     // 获取会话信息
     let (project_id, phase, context_chapter_id): (Option<String>, String, Option<String>) = {
@@ -43,6 +48,7 @@ pub async fn send_message(
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         ).map_err(|e| format!("查询会话失败: {}", e))?
     };
+    log_info!("STEP2", "会话信息 | project_id: {:?} | phase: {} | context_chapter: {:?}", project_id, phase, context_chapter_id);
 
     // 获取历史消息
     let history: Vec<(String, String)> = {
@@ -57,9 +63,11 @@ pub async fn send_message(
             .map_err(|e| format!("查询历史消息失败: {}", e))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("读取历史消息失败: {}", e))?
     };
+    log_info!("STEP3", "历史消息 | 共 {} 条 (含刚保存的用户消息)", history.len());
 
     // 获取技能的 system prompt 和 tools 定义
     let (skill_prompts, tools): (Vec<String>, Option<Vec<serde_json::Value>>) = if let Some(ref sids) = skill_ids {
+        log_info!("STEP4", "加载技能 | skill_ids: {:?}", sids);
         let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
         let mut prompts = Vec::new();
         let mut all_tools = Vec::new();
@@ -72,18 +80,23 @@ pub async fn send_message(
                 )
                 .unwrap_or_default();
             if !sp.is_empty() {
+                log_info!("STEP4", "  - 技能system_prompt: {} 字符", sp.len());
                 prompts.push(sp);
             }
             // 解析工具的 JSON 定义
             if !tools_str.is_empty() && tools_str != "[]" {
                 match serde_json::from_str::<Vec<serde_json::Value>>(&tools_str) {
-                    Ok(tool_defs) => all_tools.extend(tool_defs),
-                    Err(e) => eprintln!("解析技能工具定义失败 (skill_id={}): {}", sid, e),
+                    Ok(tool_defs) => {
+                        log_info!("STEP4", "  - 加载工具定义: {} 个", tool_defs.len());
+                        all_tools.extend(tool_defs);
+                    },
+                    Err(e) => log_warn!("STEP4", "解析技能工具定义失败 (skill_id={}): {}", sid, e),
                 }
             }
         }
         (prompts, if all_tools.is_empty() { None } else { Some(all_tools) })
     } else {
+        log_info!("STEP4", "未加载技能 | skill_ids: None");
         (Vec::new(), None)
     };
 
@@ -105,8 +118,10 @@ pub async fn send_message(
         let cards: Vec<(String, String, String)> =
             rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("读取设定卡失败: {}", e))?;
         if cards.is_empty() {
+            log_info!("STEP5", "设定卡摘要 | 项目 {} 暂无设定卡", pid);
             String::new()
         } else {
+            log_info!("STEP5", "设定卡摘要 | 共 {} 张设定卡", cards.len());
             let mut summary = String::from("【项目设定摘要】\n");
             for (name, card_type, fields) in cards {
                 summary.push_str(&format!("- [{}] {}: {}\n", card_type, name, fields));
@@ -114,6 +129,7 @@ pub async fn send_message(
             summary
         }
     } else {
+        log_info!("STEP5", "设定卡摘要 | 无关联项目，跳过");
         String::new()
     };
 
@@ -129,14 +145,18 @@ pub async fn send_message(
                 )
                 .unwrap_or_default();
             if chapter_content.is_empty() {
+                log_info!("STEP6", "章节上下文 | 章节 {} 内容为空", cid);
                 String::new()
             } else {
+                log_info!("STEP6", "章节上下文 | 章节 {} 内容: {} 字符", cid, chapter_content.len());
                 format!("【当前章节内容】\n{}\n", chapter_content)
             }
         } else {
+            log_info!("STEP6", "章节上下文 | 写作阶段但无指定章节");
             String::new()
         }
     } else {
+        log_info!("STEP6", "章节上下文 | 阶段为 {}，不注入", phase);
         String::new()
     };
 
@@ -149,14 +169,33 @@ pub async fn send_message(
         project_id.as_deref(),
         &conversation_id,
     );
+    log_info!("STEP7", "System Prompt 已构建 | 共 {} 字符", system_prompt.len());
+    log_debug!("SYSTEM_PROMPT", "\n{}", system_prompt);
 
     // 检测 /tool_name 命令，注入工具调用指令
     let (_effective_content, tool_hint) = parse_slash_command(&content);
+    if tool_hint.is_some() {
+        log_info!("STEP8", "检测到 / 命令: {:?}", tool_hint.as_ref().map(|h| &h[..80]));
+    }
 
-    // 如果用户使用了 / 命令但没有关联技能工具，加载全部内置工具
-    let tools = if tool_hint.is_some() && tools.is_none() {
-        Some(load_all_tools(&db.0)?)
+    // 确定最终的工具列表：
+    let tools = if tool_hint.is_some() {
+        let t = load_all_tools(&db.0)?;
+        log_info!("STEP8", "工具列表 | /命令触发，加载 {} 个工具", t.len());
+        Some(t)
+    } else if tools.is_none() {
+        let builtin = load_all_tools(&db.0)?;
+        if builtin.is_empty() {
+            log_info!("STEP8", "工具列表 | 无可用工具");
+            None
+        } else {
+            let names: Vec<&str> = builtin.iter().filter_map(|t| t["function"]["name"].as_str()).collect();
+            log_info!("STEP8", "工具列表 | 默认加载 {} 个工具: {:?}", builtin.len(), names);
+            Some(builtin)
+        }
     } else {
+        let count = tools.as_ref().map(|t| t.len()).unwrap_or(0);
+        log_info!("STEP8", "工具列表 | 使用技能提供的 {} 个工具", count);
         tools
     };
 
@@ -169,14 +208,15 @@ pub async fn send_message(
             |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?, row.get::<_, String>(2)?)),
         ).map_err(|e| format!("未找到默认API配置，请先在设置中配置API: {}", e))?
     };
+    log_info!("STEP9", "API配置 | base_url: {} | model: {}", base_url, default_model);
 
     // 确定使用的模型
     let use_model = model.unwrap_or_else(|| default_model.clone());
+    log_info!("STEP9", "最终模型: {}", use_model);
 
     // 构建消息列表
     let mut messages = Vec::new();
 
-    // 如果有工具指令，追加到 system prompt
     let final_system_prompt = if let Some(ref hint) = tool_hint {
         format!("{}\n\n{}", system_prompt, hint)
     } else {
@@ -186,13 +226,19 @@ pub async fn send_message(
     messages.push(crate::models::ChatMessage {
         role: "system".to_string(),
         content: final_system_prompt,
+        tool_calls: None,
+        tool_call_id: None,
     });
     for (role, msg_content) in &history {
         messages.push(crate::models::ChatMessage {
             role: role.clone(),
             content: msg_content.clone(),
+            tool_calls: None,
+            tool_call_id: None,
         });
     }
+
+    log_info!("STEP10", "消息列表构建完成 | 共 {} 条消息 (system + {} 条历史)", messages.len(), history.len());
 
     // 生成助手消息ID
     let assistant_msg_id = uuid::Uuid::new_v4().to_string();
@@ -202,8 +248,13 @@ pub async fn send_message(
         let mut token = cancel_token.0.lock().map_err(|e| format!("获取取消令牌锁失败: {}", e))?;
         *token = false;
     }
+    log_info!("STEP10", "取消令牌已重置");
 
     // 调用 LLM 客户端
+    log_section!("stream_chat 开始");
+    log_info!("STREAM", "调用 stream_chat | 模型: {} | 消息数: {} | 工具数: {}",
+        use_model, messages.len(), tools.as_ref().map(|t| t.len()).unwrap_or(0));
+
     let full_content = crate::llm::client::stream_chat(
         &app,
         &db.0,
@@ -217,6 +268,8 @@ pub async fn send_message(
         &cancel_token.0,
     )
     .await?;
+
+    log_info!("STREAM", "stream_chat 完成 | 返回内容: {} 字符", full_content.len());
 
     // 保存助手消息到数据库
     let now = chrono::Utc::now().to_rfc3339();
@@ -233,6 +286,7 @@ pub async fn send_message(
             rusqlite::params![now, content, conversation_id],
         ).map_err(|e| format!("更新会话失败: {}", e))?;
     }
+    log_info!("STEP11", "助手消息已保存 | 消息ID: {}", assistant_msg_id);
 
     // 发送完成事件
     let done_event = ChunkEvent {
@@ -243,6 +297,9 @@ pub async fn send_message(
     };
     app.emit("chat:chunk", &done_event)
         .map_err(|e| format!("发送完成事件失败: {}", e))?;
+
+    log_info!("STEP12", "完成事件已发送 | done: true");
+    log_section!("send_message 结束");
 
     Ok(assistant_msg_id)
 }
@@ -365,9 +422,9 @@ fn parse_slash_command(content: &str) -> (String, Option<String>) {
         if !tool_name.is_empty() && tool_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
             let hint = format!(
                 "【工具指令】用户通过 / 命令请求调用工具 `{}`。\n\
-                 请立即调用工具 `{}` 来处理用户的需求。\n\
+                 你必须立即调用工具 `{}`，不要生成任何文本回复，只调用工具并返回结果。\n\
                  用户补充说明：{}\n\
-                 请根据工具定义自行构造参数。如果用户提供了具体参数信息，请提取并填入。如果缺少必要参数，请使用合理默认值或向用户询问。",
+                 请根据工具定义自行构造参数。如果用户提供了具体参数信息，请提取并填入。如果缺少必要参数，请使用合理默认值。",
                 tool_name, tool_name, user_args
             );
             return (trimmed.to_string(), Some(hint));
@@ -377,7 +434,7 @@ fn parse_slash_command(content: &str) -> (String, Option<String>) {
     (content.to_string(), None)
 }
 
-/// 加载所有内置技能的工具定义
+/// 加载所有内置技能的工具定义（按工具名称去重）
 fn load_all_tools(db: &std::sync::Mutex<rusqlite::Connection>) -> Result<Vec<serde_json::Value>, String> {
     let conn = db.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     let mut stmt = conn
@@ -388,10 +445,16 @@ fn load_all_tools(db: &std::sync::Mutex<rusqlite::Connection>) -> Result<Vec<ser
         .map_err(|e| format!("查询工具定义失败: {}", e))?;
 
     let mut all_tools = Vec::new();
+    let mut seen_names = std::collections::HashSet::new();
     for tools_str in rows {
         let tools_str = tools_str.map_err(|e| format!("读取工具定义失败: {}", e))?;
         if let Ok(tool_defs) = serde_json::from_str::<Vec<serde_json::Value>>(&tools_str) {
-            all_tools.extend(tool_defs);
+            for tool_def in tool_defs {
+                let name = tool_def["function"]["name"].as_str().unwrap_or("").to_string();
+                if !name.is_empty() && seen_names.insert(name) {
+                    all_tools.push(tool_def);
+                }
+            }
         }
     }
 
