@@ -89,6 +89,7 @@ export const createConversation = (data: Omit<import('@/types').Conversation, 'i
     title: data.title,
     phase: data.phase,
     skill_ids: data.skill_ids,
+    context_chapter_id: data.context_chapter_id,
   });
 
 /** 获取会话列表 */

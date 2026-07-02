@@ -366,6 +366,7 @@ pub fn create_conversation(
     title: Option<String>,
     phase: Option<String>,
     skill_ids: Option<Vec<String>>,
+    context_chapter_id: Option<String>,
 ) -> Result<Conversation, String> {
     let id = uuid::Uuid::new_v4().to_string();
     let now = chrono::Utc::now().to_rfc3339();
@@ -377,7 +378,7 @@ pub fn create_conversation(
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     conn.execute(
         "INSERT INTO conversations (id, project_id, title, phase, skill_ids, context_chapter_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
-        rusqlite::params![id, project_id, title, phase, skill_ids_str, Option::<String>::None, now, now],
+        rusqlite::params![id, project_id, title, phase, skill_ids_str, context_chapter_id, now, now],
     ).map_err(|e| format!("创建会话失败: {}", e))?;
 
     Ok(Conversation {
@@ -386,7 +387,7 @@ pub fn create_conversation(
         title,
         phase,
         skill_ids: skill_ids.unwrap_or_default(),
-        context_chapter_id: None,
+        context_chapter_id,
         created_at: now.clone(),
         updated_at: now,
     })
