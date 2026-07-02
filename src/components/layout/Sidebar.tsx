@@ -12,7 +12,7 @@ import { clsx } from 'clsx';
 export const Sidebar: React.FC = () => {
   const { currentProject, projects, selectProject, createProject } = useProjectStore();
   const { phase } = useUIStore();
-  const { conversations, currentConversation, selectConversation, newConversation, deleteConversation } = useChatStore();
+  const { projectConversations, currentConversation, selectConversation, newConversation, deleteConversation } = useChatStore();
   const [outlineOpen, setOutlineOpen] = useState(true);
   const [settingsOpen, setSettingsOpen] = useState(true);
   const [projectSelectorOpen, setProjectSelectorOpen] = useState(false);
@@ -144,10 +144,10 @@ export const Sidebar: React.FC = () => {
           </button>
           {historyOpen && (
             <div className="ml-1 space-y-0.5">
-              {conversations.length === 0 ? (
-                <div className="px-3 py-2 text-[11px] text-text-tertiary">暂无对话</div>
-              ) : (
-                conversations.map((conv) => (
+              {(projectConversations()).length === 0 ? (
+                        <div className="px-3 py-2 text-[11px] text-text-tertiary">暂无对话</div>
+                      ) : (
+                        (projectConversations()).map((conv) => (
                   <div
                     key={conv.id}
                     className={clsx(

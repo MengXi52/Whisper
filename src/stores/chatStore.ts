@@ -4,6 +4,7 @@ import { listen } from '@tauri-apps/api/event';
 import type { Conversation, Message, Skill } from '@/types';
 import * as tauri from '@/utils/tauri';
 import { useApiConfigStore } from '@/stores/apiConfigStore';
+import { useProjectStore } from '@/stores/projectStore';
 
 /** 获取当前聊天模型名称 */
 const getModel = (): string => {
@@ -33,6 +34,8 @@ interface ChatState {
 
   /** 加载会话列表 */
   loadConversations: () => Promise<void>;
+  /** 获取当前项目下的会话列表 */
+  projectConversations: () => Conversation[];
   /** 创建新会话 */
   newConversation: () => Promise<void>;
   /** 创建新会话（带参数） */
@@ -66,6 +69,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
   loading: false,
   error: null,
 
+  /** 获取当前项目下的会话列表 */
+  projectConversations: () => {
+    const { conversations } = get();
+    const currentProject = useProjectStore.getState().currentProject;
+    if (!currentProject) return [];
+    return conversations.filter((c) => c.project_id === currentProject.id);
+  },
+
   loadConversations: async () => {
     try {
       const conversations = await tauri.listConversations();
@@ -73,10 +84,18 @@ export const useChatStore = create<ChatState>((set, get) => ({
 
       /* 如果没有对话，自动创建一个；否则自动选中最近的一个 */
       const { currentConversation } = get();
-      if (conversations.length === 0) {
-        await get().newConversation();
-      } else if (!currentConversation) {
-        await get().selectConversation(conversations[0]);
+      if (!currentConversation) {
+        /* 按当前项目过滤 */
+        const currentProject = useProjectStore.getState().currentProject;
+        const projectConvs = currentProject
+          ? conversations.filter((c) => c.project_id === currentProject.id)
+          : conversations;
+
+        if (projectConvs.length === 0) {
+          await get().newConversation();
+        } else {
+          await get().selectConversation(projectConvs[0]);
+        }
       }
     } catch (e) {
       set({ error: String(e) });
@@ -92,8 +111,10 @@ export const useChatStore = create<ChatState>((set, get) => ({
     }
 
     try {
+      /* 如果当前有选中的项目，将对话关联到该项目 */
+      const currentProject = useProjectStore.getState().currentProject;
       const conversation = await tauri.createConversation({
-        project_id: null,
+        project_id: currentProject?.id ?? null,
         title: '',
         phase: 'ideation',
         skill_ids: [],

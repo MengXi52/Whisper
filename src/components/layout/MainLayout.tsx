@@ -3,15 +3,23 @@ import React from 'react';
 import { ChevronLeft, Minimize2 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { useUIStore } from '@/stores/uiStore';
+import { useProjectStore } from '@/stores/projectStore';
 import { TopBar } from './TopBar';
 import { StatusBar } from './StatusBar';
 import { Sidebar } from './Sidebar';
 import { DynamicPanel } from '@/components/panel/DynamicPanel';
 import { ChatView } from '@/components/chat/ChatView';
 import { WritingEditor } from '@/components/editor/WritingEditor';
+import { ProjectInitScreen } from '@/components/project/ProjectInitScreen';
 
 export const MainLayout: React.FC = () => {
   const { phase, sidebarOpen, panelOpen, focusMode, togglePanel, toggleFocusMode } = useUIStore();
+  const currentProject = useProjectStore((s) => s.currentProject);
+
+  /* 没有项目时显示项目引导页面 */
+  if (!currentProject) {
+    return <ProjectInitScreen />;
+  }
 
   /* 根据阶段决定中间区域内容 */
   const isWritingPhase = phase === 'writing' || phase === 'editing';

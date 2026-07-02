@@ -54,7 +54,17 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const projects = await tauri.getProjects();
-      set({ projects, loading: false });
+      /* 如果没有选中项目且有项目存在，自动选中最新的项目 */
+      const { currentProject } = get();
+      if (!currentProject && projects.length > 0) {
+        const latest = projects[0];
+        set({ currentProject: latest, projects, loading: false });
+        /* 加载该项目的章节和设定卡 */
+        await get().loadChapters(latest.id);
+        useSettingsStore.getState().loadSettingCards(latest.id);
+      } else {
+        set({ projects, loading: false });
+      }
     } catch (e) {
       set({ error: String(e), loading: false });
     }
