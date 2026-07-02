@@ -1,6 +1,6 @@
 /** 设定卡列表组件 */
 import React from 'react';
-import { Users, Castle, Globe, Package, Zap, Clock } from 'lucide-react';
+import { Users, Castle, Globe, Package, Zap, Clock, Trash2 } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useProjectStore } from '@/stores/projectStore';
 import { CARD_TYPE_LABELS } from '@/types';
@@ -28,7 +28,7 @@ const cardTypeColors: Record<CardType, string> = {
 };
 
 export const SettingCardList: React.FC = () => {
-  const { settingCards, selectCard, createSettingCard } = useSettingsStore();
+  const { settingCards, selectCard, createSettingCard, deleteSettingCard } = useSettingsStore();
   const currentProject = useProjectStore((s) => s.currentProject);
 
   /* 按类型分组 */
@@ -64,13 +64,25 @@ export const SettingCardList: React.FC = () => {
 
             {/* 该类型下的设定卡 */}
             {cards.map((card) => (
-              <button
+              <div
                 key={card.id}
+                className="group flex items-center gap-1 px-3 py-1.5 pl-7 hover:bg-bg-hover rounded-md transition-colors cursor-pointer"
                 onClick={() => selectCard(card)}
-                className="w-full text-left px-3 py-1.5 pl-7 text-sm text-text-primary hover:bg-bg-hover rounded-md transition-colors truncate"
               >
-                {card.name}
-              </button>
+                <span className="flex-1 text-sm text-text-primary truncate min-w-0">
+                  {card.name}
+                </span>
+                <button
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    deleteSettingCard(card.id);
+                  }}
+                  className="shrink-0 p-0.5 rounded text-text-tertiary hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                  title="删除设定卡"
+                >
+                  <Trash2 size={11} />
+                </button>
+              </div>
             ))}
           </div>
         ))
