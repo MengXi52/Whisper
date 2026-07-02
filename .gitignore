@@ -1,6 +1,10 @@
 ﻿# Dependencies
 node_modules/
 
+# agent
+.agents/
+
+
 # Build outputs
 dist/
 dist-ssr/
