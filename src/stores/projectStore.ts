@@ -2,6 +2,7 @@
 import { create } from 'zustand';
 import type { Project, Chapter } from '@/types';
 import * as tauri from '@/utils/tauri';
+import { useSettingsStore } from './settingsStore';
 
 interface ProjectState {
   /** 当前项目 */
@@ -62,6 +63,8 @@ export const useProjectStore = create<ProjectState>((set, get) => ({
   selectProject: async (project) => {
     set({ currentProject: project, currentChapter: null });
     await get().loadChapters(project.id);
+    // 同时加载该项目的设定卡
+    useSettingsStore.getState().loadSettingCards(project.id);
   },
 
   createProject: async (name, description, genre) => {

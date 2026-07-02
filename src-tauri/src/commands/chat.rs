@@ -271,6 +271,27 @@ pub async fn send_message(
 
     log_info!("STREAM", "stream_chat 完成 | 返回内容: {} 字符", full_content.len());
 
+    // 如果会话没有关联项目，尝试自动关联 LLM 创建的项目
+    if project_id.is_none() {
+        let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+        // 查找最晚创建且未被其他会话关联的项目
+        let new_pid: Option<String> = conn
+            .query_row(
+                "SELECT id FROM projects WHERE id NOT IN (SELECT project_id FROM conversations WHERE project_id IS NOT NULL) ORDER BY created_at DESC LIMIT 1",
+                [],
+                |row| row.get(0),
+            )
+            .ok();
+        if let Some(pid) = new_pid {
+            conn.execute(
+                "UPDATE conversations SET project_id = ?1 WHERE id = ?2",
+                rusqlite::params![pid, conversation_id],
+            )
+            .ok();
+            log_info!("STEP11", "自动关联项目: {} → 会话: {}", pid, conversation_id);
+        }
+    }
+
     // 保存助手消息到数据库
     let now = chrono::Utc::now().to_rfc3339();
     {
@@ -378,6 +399,32 @@ pub fn delete_conversation(db: State<'_, DbState>, id: String) -> Result<(), Str
     conn.execute("DELETE FROM conversations WHERE id = ?1", rusqlite::params![id])
         .map_err(|e| format!("删除会话失败: {}", e))?;
     Ok(())
+}
+
+/// 获取单个会话详情
+#[tauri::command]
+pub fn get_conversation(db: State<'_, DbState>, id: String) -> Result<Conversation, String> {
+    let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    let row = conn.query_row(
+        "SELECT id, project_id, title, phase, skill_ids, context_chapter_id, created_at, updated_at FROM conversations WHERE id = ?1",
+        rusqlite::params![id],
+        |row| {
+            let skill_ids_str: String = row.get(4)?;
+            let skill_ids: Vec<String> = serde_json::from_str(&skill_ids_str)
+                .unwrap_or_default();
+            Ok(Conversation {
+                id: row.get(0)?,
+                project_id: row.get(1)?,
+                title: row.get(2)?,
+                phase: row.get(3)?,
+                skill_ids,
+                context_chapter_id: row.get(5)?,
+                created_at: row.get(6)?,
+                updated_at: row.get(7)?,
+            })
+        },
+    ).map_err(|e| format!("查询会话失败: {}", e))?;
+    Ok(row)
 }
 
 /// 获取会话列表（按更新时间倒序）

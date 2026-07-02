@@ -257,6 +257,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           return { isGenerating: false, streamingContent: '' };
         });
+
+        /* 刷新侧边栏数据（LLM 可能通过工具创建了新的章节或设定卡） */
+        const { currentConversation } = get();
+        const convId = currentConversation?.id;
+        if (convId) {
+          Promise.all([
+            import('@/utils/tauri').then((m) => m.getConversation(convId)),
+            import('@/stores/projectStore'),
+            import('@/stores/settingsStore'),
+          ]).then(([updatedConv, { useProjectStore }, { useSettingsStore }]) => {
+            /* 如果 conversation 的 project_id 发生了变化，更新本地状态 */
+            if (currentConversation?.project_id !== updatedConv.project_id) {
+              set({ currentConversation: updatedConv });
+            }
+
+            const pid = updatedConv.project_id;
+            if (pid) {
+              /* 刷新项目列表 */
+              useProjectStore.getState().loadProjects();
+              /* 加载该项目的章节和设定卡 */
+              useProjectStore.getState().loadChapters(pid);
+              useSettingsStore.getState().loadSettingCards(pid);
+            } else {
+              /* 没有 project_id，仅刷新项目列表 */
+              useProjectStore.getState().loadProjects();
+            }
+          }).catch(console.error);
+        }
+
         return;
       }
 

@@ -29,6 +29,7 @@ pub fn run() {
             commands::chat::get_messages,
             commands::chat::create_conversation,
             commands::chat::delete_conversation,
+            commands::chat::get_conversation,
             commands::chat::list_conversations,
             // 项目命令
             commands::project::create_project,

@@ -95,6 +95,10 @@ export const createConversation = (data: Omit<import('@/types').Conversation, 'i
 export const listConversations = () =>
   tauriInvoke<import('@/types').Conversation[]>('list_conversations');
 
+/** 获取单个会话详情 */
+export const getConversation = (id: string) =>
+  tauriInvoke<import('@/types').Conversation>('get_conversation', { id });
+
 /** 获取会话消息 */
 export const getMessages = (conversationId: string) =>
   tauriInvoke<import('@/types').Message[]>('get_messages', { conversationId });
