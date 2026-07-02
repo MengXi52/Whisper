@@ -2,7 +2,7 @@ use crate::db::DbState;
 use crate::llm::client::CancellationTokenState;
 use crate::llm::prompt;
 use crate::models::{ChunkEvent, Conversation, Message};
-use crate::{log_debug, log_error, log_info, log_section, log_warn};
+use crate::{log_debug, log_info, log_section, log_warn};
 use serde_json;
 use tauri::{AppHandle, Emitter, State};
 

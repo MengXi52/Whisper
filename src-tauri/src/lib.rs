@@ -1,6 +1,7 @@
 mod commands;
 mod db;
 mod llm;
+mod logger;
 mod models;
 
 use db::DbState;
@@ -8,6 +9,10 @@ use llm::client::CancellationTokenState;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    // 初始化日志
+    let _logger = logger::get_logger();
+    log_section!("应用启动");
+
     // 初始化数据库
     let conn = db::init_db().expect("数据库初始化失败");
 

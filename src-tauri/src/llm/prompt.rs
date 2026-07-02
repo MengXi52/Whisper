@@ -1,3 +1,5 @@
+use crate::{log_debug, log_info};
+
 /// 构建完整的 system prompt
 ///
 /// 根据写作阶段、技能注入、设定卡摘要和章节上下文组装
@@ -9,41 +11,54 @@ pub fn build_system_prompt(
     project_id: Option<&str>,
     conversation_id: &str,
 ) -> String {
+    log_info!("PROMPT", "构建 System Prompt | phase: {} | skills: {} | 设定卡: {} | 章节: {}",
+        phase, skill_prompts.len(), if setting_summary.is_empty() { "无" } else { "有" },
+        if chapter_context.is_empty() { "无" } else { "有" });
+
     let mut parts = Vec::new();
 
     // 基础角色设定
     parts.push(get_base_prompt());
+    log_debug!("PROMPT", "添加基础角色设定");
 
     // 阶段 prompt
     parts.push(get_phase_prompt(phase));
+    log_debug!("PROMPT", "添加阶段 prompt: {}", phase);
 
     // 技能 prompt 注入
-    for sp in skill_prompts {
+    for (i, sp) in skill_prompts.iter().enumerate() {
         parts.push(format!("【技能注入】\n{}", sp));
+        log_debug!("PROMPT", "添加技能 prompt[{}]: {} 字符", i, sp.len());
     }
 
     // 设定卡摘要
     if !setting_summary.is_empty() {
         parts.push(setting_summary.to_string());
+        log_debug!("PROMPT", "添加设定卡摘要: {} 字符", setting_summary.len());
     }
 
     // 章节上下文
     if !chapter_context.is_empty() {
         parts.push(chapter_context.to_string());
+        log_debug!("PROMPT", "添加章节上下文: {} 字符", chapter_context.len());
     }
 
-    // 工具调用上下文（关键：让 LLM 知道 project_id 和 conversation_id）
+    // 工具调用上下文
+    let project_id_str = project_id.unwrap_or("无关联项目");
     let tool_context = format!(
         "【工具调用上下文】\n\
          当前对话ID: {}\n\
          当前项目ID: {}\n\
          调用工具时，请使用上述 ID 作为 project_id 或 conversation_id 参数。",
         conversation_id,
-        project_id.unwrap_or("无关联项目")
+        project_id_str
     );
     parts.push(tool_context);
+    log_info!("PROMPT", "工具调用上下文 | project_id: {} | conversation_id: {}", project_id_str, conversation_id);
 
-    parts.join("\n\n")
+    let result = parts.join("\n\n");
+    log_info!("PROMPT", "System Prompt 构建完成 | 共 {} 字符 | {} 个段落", result.len(), parts.len());
+    result
 }
 
 /// 基础角色 prompt
