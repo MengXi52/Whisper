@@ -359,6 +359,34 @@ fn init_builtin_skills(conn: &Connection) -> Result<(), String> {
                 }
             }
         }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "list_skills",
+                "description": "列出所有可用的写作技能（内置和自定义）",
+                "parameters": {
+                    "type": "object",
+                    "properties": {}
+                }
+            }
+        }),
+        serde_json::json!({
+            "type": "function",
+            "function": {
+                "name": "use_skill",
+                "description": "激活指定技能，获取该技能的系统提示词以切换写作风格",
+                "parameters": {
+                    "type": "object",
+                    "properties": {
+                        "skill_id": {
+                            "type": "string",
+                            "description": "技能ID"
+                        }
+                    },
+                    "required": ["skill_id"]
+                }
+            }
+        }),
     ]).map_err(|e| format!("序列化工具定义失败: {}", e))?;
 
     // 古风言情技能

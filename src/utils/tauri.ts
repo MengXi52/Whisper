@@ -95,7 +95,15 @@ export const deleteConversation = (id: string) => tauriInvoke<void>('delete_conv
 // ===== 技能相关 =====
 
 /** 获取技能列表 */
-export const getSkills = () => tauriInvoke<import('@/types').Skill[]>('get_skills');
+export const getSkills = () => tauriInvoke<import('@/types').Skill[]>('list_skills');
+
+/** 激活技能（关联到当前对话） */
+export const activateSkill = (conversationId: string, skillId: string) =>
+  tauriInvoke('activate_skill', { conversationId, skillId });
+
+/** 取消激活技能 */
+export const deactivateSkill = (conversationId: string, skillId: string) =>
+  tauriInvoke('deactivate_skill', { conversationId, skillId });
 
 // ===== API 配置相关 =====
 

@@ -6,6 +6,8 @@ pub fn build_system_prompt(
     skill_prompts: &[String],
     setting_summary: &str,
     chapter_context: &str,
+    project_id: Option<&str>,
+    conversation_id: &str,
 ) -> String {
     let mut parts = Vec::new();
 
@@ -29,6 +31,17 @@ pub fn build_system_prompt(
     if !chapter_context.is_empty() {
         parts.push(chapter_context.to_string());
     }
+
+    // 工具调用上下文（关键：让 LLM 知道 project_id 和 conversation_id）
+    let tool_context = format!(
+        "【工具调用上下文】\n\
+         当前对话ID: {}\n\
+         当前项目ID: {}\n\
+         调用工具时，请使用上述 ID 作为 project_id 或 conversation_id 参数。",
+        conversation_id,
+        project_id.unwrap_or("无关联项目")
+    );
+    parts.push(tool_context);
 
     parts.join("\n\n")
 }

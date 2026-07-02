@@ -223,6 +223,8 @@ fn execute_tools(db: &Mutex<Connection>, tool_calls: &[ToolCallResult]) -> Resul
             "update_setting_card" => tool_update_setting_card(db, &tc.arguments),
             "delete_setting_card" => tool_delete_setting_card(db, &tc.arguments),
             "query_conversations" => tool_query_conversations(db, &tc.arguments),
+            "list_skills" => tool_list_skills(db, &tc.arguments),
+            "use_skill" => tool_use_skill(db, &tc.arguments),
             _ => format!("工具 '{}' 未实现，参数: {}", tc.name, tc.arguments),
         };
         results.push(result);
@@ -639,4 +641,78 @@ fn tool_query_conversations(db: &Mutex<Connection>, args: &str) -> String {
         output.push_str(&format!("[{}]: {}\n", role_label, preview));
     }
     output
+}
+
+/// 列出可用技能
+fn tool_list_skills(db: &Mutex<Connection>, _args: &str) -> String {
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let mut stmt = match conn.prepare("SELECT id, name, description, is_builtin FROM skills ORDER BY is_builtin DESC, name ASC") {
+        Ok(s) => s,
+        Err(e) => return format!("查询技能失败: {}", e),
+    };
+
+    let rows = match stmt.query_map([], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, i64>(3)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => return format!("查询技能失败: {}", e),
+    };
+
+    let skills: Vec<_> = match rows.collect() {
+        Ok(c) => c,
+        Err(e) => return format!("读取技能失败: {}", e),
+    };
+
+    if skills.is_empty() {
+        return "暂无可用技能".to_string();
+    }
+
+    let mut output = String::from("【技能列表】\n");
+    for (id, name, description, is_builtin) in skills {
+        let tag = if is_builtin == 1 { "内置" } else { "自定义" };
+        output.push_str(&format!("- [{}] {} (id: {})\n  描述: {}\n", tag, name, id, description));
+    }
+    output.push_str("\n使用 use_skill 工具可以激活某个技能");
+    output
+}
+
+/// 使用技能（返回技能的 system_prompt 供 LLM 切换风格）
+fn tool_use_skill(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        skill_id: String,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let (name, system_prompt, tools): (String, String, String) = match conn.query_row(
+        "SELECT name, system_prompt, tools FROM skills WHERE id = ?1",
+        rusqlite::params![args.skill_id],
+        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+    ) {
+        Ok(r) => r,
+        Err(rusqlite::Error::QueryReturnedNoRows) => return format!("技能 {} 不存在", args.skill_id),
+        Err(e) => return format!("查询技能失败: {}", e),
+    };
+
+    format!(
+        "已激活技能: {}\n后续输出请遵循该技能的系统提示词：\n\n{}\n\n该技能可用工具: {}",
+        name, system_prompt, tools
+    )
 }

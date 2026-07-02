@@ -141,7 +141,24 @@ pub async fn send_message(
     };
 
     // 组装 system prompt
-    let system_prompt = prompt::build_system_prompt(&phase, &skill_prompts, &setting_summary, &chapter_context);
+    let system_prompt = prompt::build_system_prompt(
+        &phase,
+        &skill_prompts,
+        &setting_summary,
+        &chapter_context,
+        project_id.as_deref(),
+        &conversation_id,
+    );
+
+    // 检测 /tool_name 命令，注入工具调用指令
+    let (_effective_content, tool_hint) = parse_slash_command(&content);
+
+    // 如果用户使用了 / 命令但没有关联技能工具，加载全部内置工具
+    let tools = if tool_hint.is_some() && tools.is_none() {
+        Some(load_all_tools(&db.0)?)
+    } else {
+        tools
+    };
 
     // 获取 API 配置
     let (base_url, api_key, default_model) = {
@@ -158,9 +175,17 @@ pub async fn send_message(
 
     // 构建消息列表
     let mut messages = Vec::new();
+
+    // 如果有工具指令，追加到 system prompt
+    let final_system_prompt = if let Some(ref hint) = tool_hint {
+        format!("{}\n\n{}", system_prompt, hint)
+    } else {
+        system_prompt
+    };
+
     messages.push(crate::models::ChatMessage {
         role: "system".to_string(),
-        content: system_prompt,
+        content: final_system_prompt,
     });
     for (role, msg_content) in &history {
         messages.push(crate::models::ChatMessage {
@@ -323,4 +348,52 @@ pub fn list_conversations(db: State<'_, DbState>) -> Result<Vec<Conversation>, S
         })
         .map_err(|e| format!("查询会话失败: {}", e))?;
     rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("读取会话失败: {}", e))
+}
+
+/// 解析 /tool_name 命令
+/// 返回 (实际发送给 LLM 的内容, 工具调用提示)
+fn parse_slash_command(content: &str) -> (String, Option<String>) {
+    let trimmed = content.trim();
+
+    // 检测 /tool_name 格式（开头或行首）
+    if let Some(rest) = trimmed.strip_prefix('/') {
+        let parts: Vec<&str> = rest.splitn(2, ' ').collect();
+        let tool_name = parts[0];
+        let user_args = parts.get(1).unwrap_or(&"");
+
+        // 验证工具名格式（只含字母、数字、下划线）
+        if !tool_name.is_empty() && tool_name.chars().all(|c| c.is_alphanumeric() || c == '_') {
+            let hint = format!(
+                "【工具指令】用户通过 / 命令请求调用工具 `{}`。\n\
+                 请立即调用工具 `{}` 来处理用户的需求。\n\
+                 用户补充说明：{}\n\
+                 请根据工具定义自行构造参数。如果用户提供了具体参数信息，请提取并填入。如果缺少必要参数，请使用合理默认值或向用户询问。",
+                tool_name, tool_name, user_args
+            );
+            return (trimmed.to_string(), Some(hint));
+        }
+    }
+
+    (content.to_string(), None)
+}
+
+/// 加载所有内置技能的工具定义
+fn load_all_tools(db: &std::sync::Mutex<rusqlite::Connection>) -> Result<Vec<serde_json::Value>, String> {
+    let conn = db.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    let mut stmt = conn
+        .prepare("SELECT tools FROM skills WHERE is_builtin = 1 AND tools != '[]' AND tools != ''")
+        .map_err(|e| format!("查询工具定义失败: {}", e))?;
+
+    let rows = stmt.query_map([], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("查询工具定义失败: {}", e))?;
+
+    let mut all_tools = Vec::new();
+    for tools_str in rows {
+        let tools_str = tools_str.map_err(|e| format!("读取工具定义失败: {}", e))?;
+        if let Ok(tool_defs) = serde_json::from_str::<Vec<serde_json::Value>>(&tools_str) {
+            all_tools.extend(tool_defs);
+        }
+    }
+
+    Ok(all_tools)
 }

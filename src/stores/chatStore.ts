@@ -120,7 +120,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
     set({ loading: true, error: null });
     try {
       const messages = await tauri.getMessages(conversation.id);
-      set({ currentConversation: conversation, messages, loading: false, activeSkillIds: [] });
+      set({
+        currentConversation: conversation,
+        messages,
+        loading: false,
+        activeSkillIds: conversation.skill_ids || [],
+      });
     } catch (e) {
       set({ error: String(e), loading: false });
     }
@@ -208,11 +213,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   toggleSkill: (skillId) => {
-    set((state) => ({
-      activeSkillIds: state.activeSkillIds.includes(skillId)
-        ? state.activeSkillIds.filter((id) => id !== skillId)
-        : [...state.activeSkillIds, skillId],
-    }));
+    const state = get();
+    const isActive = state.activeSkillIds.includes(skillId);
+    const conversationId = state.currentConversation?.id;
+
+    if (isActive) {
+      /* 取消激活 */
+      set({ activeSkillIds: state.activeSkillIds.filter((id) => id !== skillId) });
+      if (conversationId) {
+        tauri.deactivateSkill(conversationId, skillId).catch(console.error);
+      }
+    } else {
+      /* 激活 */
+      set({ activeSkillIds: [...state.activeSkillIds, skillId] });
+      if (conversationId) {
+        tauri.activateSkill(conversationId, skillId).catch(console.error);
+      }
+    }
   },
 
   initChunkListener: async () => {
