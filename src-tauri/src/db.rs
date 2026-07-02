@@ -282,7 +282,7 @@ fn init_builtin_skills(conn: &Connection) -> Result<(), String> {
                         },
                         "fields": {
                             "type": "string",
-                            "description": "设定卡字段（JSON格式字符串，可选）"
+                            "description": "设定卡字段（JSON格式字符串）。请使用扁平键值对结构，不要使用嵌套对象。对于人物卡(character)，推荐的键有：name(姓名)、age(年龄)、gender(性别)、personality(性格)、appearance(外貌)、background(背景故事)、faction(所属势力)、goal(目标)。示例：{\"name\":\"琪亚娜\",\"age\":\"16\",\"gender\":\"女\",\"personality\":\"天真活泼\",\"appearance\":\"银白色长发\",\"background\":\"自幼被齐格飞救出...\",\"faction\":\"圣芙蕾雅学园\",\"goal\":\"守护世界\"}"
                         }
                     },
                     "required": ["project_id", "name", "card_type"]
@@ -311,7 +311,7 @@ fn init_builtin_skills(conn: &Connection) -> Result<(), String> {
                         },
                         "fields": {
                             "type": "string",
-                            "description": "新的设定卡字段（JSON格式字符串，可选）"
+                            "description": "设定卡字段（JSON格式字符串）。请使用扁平键值对结构，不要使用嵌套对象。对于人物卡(character)，推荐的键有：name(姓名)、age(年龄)、gender(性别)、personality(性格)、appearance(外貌)、background(背景故事)、faction(所属势力)、goal(目标)。示例：{\"name\":\"琪亚娜\",\"age\":\"16\",\"gender\":\"女\",\"personality\":\"天真活泼\",\"appearance\":\"银白色长发\"}"
                         }
                     },
                     "required": ["card_id"]
