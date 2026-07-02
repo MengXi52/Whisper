@@ -8,6 +8,9 @@ export const OutlineTree: React.FC = () => {
   const { chapters, currentChapter, selectChapter, createChapter, deleteChapter } = useProjectStore();
   const currentProject = useProjectStore((s) => s.currentProject);
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+  const [newChapterTitle, setNewChapterTitle] = useState('');
+  const [showNewInput, setShowNewInput] = useState(false);
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   /* 按层级组织章节 */
   const rootChapters = chapters.filter((c) => !c.parent_id);
@@ -26,12 +29,23 @@ export const OutlineTree: React.FC = () => {
 
   const handleAddChapter = async () => {
     if (!currentProject) return;
-    await createChapter(
-      currentProject.id,
-      null,
-      `第${chapters.length + 1}章`,
-      chapters.length
-    );
+    setShowNewInput(true);
+    setNewChapterTitle('');
+    // 等待渲染完成后聚焦输入框
+    setTimeout(() => inputRef.current?.focus(), 0);
+  };
+
+  const handleConfirmCreate = async () => {
+    if (!currentProject || !showNewInput) return;
+    const title = newChapterTitle.trim() || `第${chapters.length + 1}章`;
+    setShowNewInput(false);
+    setNewChapterTitle('');
+    await createChapter(currentProject.id, null, title, chapters.length);
+  };
+
+  const handleCancelCreate = () => {
+    setShowNewInput(false);
+    setNewChapterTitle('');
   };
 
   const handleDelete = async (id: string) => {
@@ -114,14 +128,40 @@ export const OutlineTree: React.FC = () => {
         rootChapters.map((chapter) => renderChapter(chapter))
       )}
 
-      {/* 新增章节按钮 */}
-      <button
-        onClick={handleAddChapter}
-        className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-tertiary hover:text-accent hover:bg-bg-hover rounded-md transition-colors mt-1"
-      >
-        <Plus size={12} />
-        <span>新增章节</span>
-      </button>
+      {/* 新增章节 */}
+      <div className="mt-1 px-2">
+        {showNewInput ? (
+          <div className="flex items-center gap-1">
+            <input
+              ref={inputRef}
+              type="text"
+              value={newChapterTitle}
+              onChange={(e) => setNewChapterTitle(e.target.value)}
+              placeholder={`第${chapters.length + 1}章`}
+              className="flex-1 px-2 py-1 text-xs border border-border rounded bg-bg-secondary text-text-primary placeholder:text-text-tertiary focus:outline-none focus:ring-1 focus:ring-accent"
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleConfirmCreate();
+                if (e.key === 'Escape') handleCancelCreate();
+              }}
+              onBlur={handleConfirmCreate}
+            />
+            <button
+              onClick={handleConfirmCreate}
+              className="px-2 py-1 text-xs bg-accent text-text-inverse rounded hover:bg-accent-hover transition-colors"
+            >
+              确定
+            </button>
+          </div>
+        ) : (
+          <button
+            onClick={handleAddChapter}
+            className="w-full flex items-center gap-1.5 px-3 py-1.5 text-xs text-text-tertiary hover:text-accent hover:bg-bg-hover rounded-md transition-colors"
+          >
+            <Plus size={12} />
+            <span>新增章节</span>
+          </button>
+        )}
+      </div>
     </div>
   );
 };
