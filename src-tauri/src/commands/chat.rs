@@ -181,6 +181,7 @@ pub async fn send_message(
     // 调用 LLM 客户端
     let full_content = crate::llm::client::stream_chat(
         &app,
+        &db.0,
         &base_url,
         &api_key,
         &use_model,

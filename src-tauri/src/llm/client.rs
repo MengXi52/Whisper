@@ -2,6 +2,7 @@ use crate::models::{ChatMessage, ChatRequest, ChunkEvent};
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
 use reqwest::Client;
+use rusqlite::Connection;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter};
 
@@ -22,6 +23,7 @@ struct ToolCallResult {
 /// 如果模型返回 tool_calls，会自动执行工具并重新请求，直到返回纯内容
 pub async fn stream_chat(
     app: &AppHandle,
+    db: &Mutex<Connection>,
     base_url: &str,
     api_key: &str,
     model: &str,
@@ -159,21 +161,9 @@ pub async fn stream_chat(
                                         if let Some(reason) = finish_reason.as_str() {
                                             if reason == "tool_calls" {
                                                 // 执行工具调用
-                                                let tool_results = execute_tools(&tool_calls_accumulated)?;
+                                                let tool_results = execute_tools(db, &tool_calls_accumulated)?;
 
                                                 // 添加助手消息（包含 tool_calls）
-                                                let mut tc_json = Vec::new();
-                                                for tc in &tool_calls_accumulated {
-                                                    tc_json.push(serde_json::json!({
-                                                        "id": tc.tool_call_id,
-                                                        "type": "function",
-                                                        "function": {
-                                                            "name": tc.name,
-                                                            "arguments": tc.arguments
-                                                        }
-                                                    }));
-                                                }
-
                                                 messages.push(ChatMessage {
                                                     role: "assistant".to_string(),
                                                     content: full_content.clone(),
@@ -219,15 +209,434 @@ pub async fn stream_chat(
 }
 
 /// 执行工具调用
-fn execute_tools(tool_calls: &[ToolCallResult]) -> Result<Vec<String>, String> {
+fn execute_tools(db: &Mutex<Connection>, tool_calls: &[ToolCallResult]) -> Result<Vec<String>, String> {
     let mut results = Vec::new();
     for tc in tool_calls {
-        // 根据工具名称执行对应逻辑
         let result = match tc.name.as_str() {
-            // 这里可以根据实际工具扩展
+            "query_outline" => tool_query_outline(db, &tc.arguments),
+            "query_chapter" => tool_query_chapter(db, &tc.arguments),
+            "create_chapter" => tool_create_chapter(db, &tc.arguments),
+            "update_chapter" => tool_update_chapter(db, &tc.arguments),
+            "delete_chapter" => tool_delete_chapter(db, &tc.arguments),
+            "query_setting_cards" => tool_query_setting_cards(db, &tc.arguments),
+            "create_setting_card" => tool_create_setting_card(db, &tc.arguments),
+            "update_setting_card" => tool_update_setting_card(db, &tc.arguments),
+            "delete_setting_card" => tool_delete_setting_card(db, &tc.arguments),
+            "query_conversations" => tool_query_conversations(db, &tc.arguments),
             _ => format!("工具 '{}' 未实现，参数: {}", tc.name, tc.arguments),
         };
         results.push(result);
     }
     Ok(results)
+}
+
+// ========== 工具实现 ==========
+
+/// 查询大纲
+fn tool_query_outline(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        project_id: String,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let mut stmt = match conn.prepare(
+        "SELECT id, title, parent_id, sort_order, status FROM chapters WHERE project_id = ?1 ORDER BY sort_order ASC"
+    ) {
+        Ok(s) => s,
+        Err(e) => return format!("查询大纲失败: {}", e),
+    };
+
+    let rows = match stmt.query_map(rusqlite::params![args.project_id], |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, Option<String>>(2)?,
+            row.get::<_, i64>(3)?,
+            row.get::<_, String>(4)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => return format!("查询大纲失败: {}", e),
+    };
+
+    let chapters: Vec<_> = match rows.collect() {
+        Ok(c) => c,
+        Err(e) => return format!("读取大纲失败: {}", e),
+    };
+
+    if chapters.is_empty() {
+        return "该项目暂无大纲".to_string();
+    }
+
+    let mut output = String::from("【大纲列表】\n");
+    for (id, title, parent_id, sort_order, status) in chapters {
+        let indent = if parent_id.is_some() { "  " } else { "" };
+        output.push_str(&format!("{}- [{}] {} (id: {}, 状态: {})\n", indent, sort_order, title, id, status));
+    }
+    output
+}
+
+/// 查询章节内容
+fn tool_query_chapter(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        chapter_id: String,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let (title, content): (String, String) = match conn.query_row(
+        "SELECT title, content FROM chapters WHERE id = ?1",
+        rusqlite::params![args.chapter_id],
+        |row| Ok((row.get(0)?, row.get(1)?)),
+    ) {
+        Ok(r) => r,
+        Err(e) => return format!("查询章节失败: {}", e),
+    };
+
+    format!("【章节: {}】\n\n{}", title, content)
+}
+
+/// 更新章节内容
+fn tool_update_chapter(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        chapter_id: String,
+        content: String,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let word_count = args.content.chars().count() as i64;
+    let now = chrono::Utc::now().to_rfc3339();
+
+    match conn.execute(
+        "UPDATE chapters SET content = ?1, word_count = ?2, updated_at = ?3 WHERE id = ?4",
+        rusqlite::params![args.content, word_count, now, args.chapter_id],
+    ) {
+        Ok(_) => format!("章节 {} 已更新，字数: {}", args.chapter_id, word_count),
+        Err(e) => format!("更新章节失败: {}", e),
+    }
+}
+
+/// 删除章节
+fn tool_delete_chapter(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        chapter_id: String,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    // 先查出标题用于返回信息
+    let title: Option<String> = conn
+        .query_row("SELECT title FROM chapters WHERE id = ?1", rusqlite::params![args.chapter_id], |row| row.get(0))
+        .ok();
+
+    match conn.execute("DELETE FROM chapters WHERE id = ?1", rusqlite::params![args.chapter_id]) {
+        Ok(0) => format!("章节 {} 不存在", args.chapter_id),
+        Ok(_) => format!("章节已删除: {} (id: {})", title.unwrap_or_default(), args.chapter_id),
+        Err(e) => format!("删除章节失败: {}", e),
+    }
+}
+
+/// 创建章节
+fn tool_create_chapter(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        project_id: String,
+        title: String,
+        #[serde(default)]
+        parent_id: Option<String>,
+        #[serde(default)]
+        content: Option<String>,
+        #[serde(default)]
+        sort_order: Option<i64>,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let content = args.content.unwrap_or_default();
+    let sort_order = args.sort_order.unwrap_or(0);
+    let word_count = content.chars().count() as i64;
+
+    match conn.execute(
+        "INSERT INTO chapters (id, project_id, parent_id, title, content, sort_order, status, word_count, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        rusqlite::params![id, args.project_id, args.parent_id, args.title, content, sort_order, "draft", word_count, now, now],
+    ) {
+        Ok(_) => format!("章节已创建: {} (id: {})", args.title, id),
+        Err(e) => format!("创建章节失败: {}", e),
+    }
+}
+
+/// 查询设定卡
+fn tool_query_setting_cards(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        project_id: String,
+        #[serde(default)]
+        card_type: Option<String>,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let (query, params): (String, Vec<Box<dyn rusqlite::types::ToSql>>) = match &args.card_type {
+        Some(ct) => (
+            "SELECT id, name, card_type, fields FROM setting_cards WHERE project_id = ?1 AND card_type = ?2".to_string(),
+            vec![Box::new(args.project_id.clone()) as Box<dyn rusqlite::types::ToSql>, Box::new(ct.clone()) as Box<dyn rusqlite::types::ToSql>],
+        ),
+        None => (
+            "SELECT id, name, card_type, fields FROM setting_cards WHERE project_id = ?1".to_string(),
+            vec![Box::new(args.project_id.clone()) as Box<dyn rusqlite::types::ToSql>],
+        ),
+    };
+
+    let mut stmt = match conn.prepare(&query) {
+        Ok(s) => s,
+        Err(e) => return format!("查询设定卡失败: {}", e),
+    };
+
+    let rows = match stmt.query_map(rusqlite::params_from_iter(params.iter().map(|p| p.as_ref())), |row| {
+        Ok((
+            row.get::<_, String>(0)?,
+            row.get::<_, String>(1)?,
+            row.get::<_, String>(2)?,
+            row.get::<_, String>(3)?,
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => return format!("查询设定卡失败: {}", e),
+    };
+
+    let cards: Vec<_> = match rows.collect() {
+        Ok(c) => c,
+        Err(e) => return format!("读取设定卡失败: {}", e),
+    };
+
+    if cards.is_empty() {
+        return "该项目暂无设定卡".to_string();
+    }
+
+    let mut output = String::from("【设定卡列表】\n");
+    for (id, name, card_type, fields) in cards {
+        output.push_str(&format!("- [{}] {} (id: {})\n  字段: {}\n", card_type, name, id, fields));
+    }
+    output
+}
+
+/// 创建设定卡
+fn tool_create_setting_card(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        project_id: String,
+        name: String,
+        card_type: String,
+        #[serde(default)]
+        fields: Option<String>,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let id = uuid::Uuid::new_v4().to_string();
+    let now = chrono::Utc::now().to_rfc3339();
+    let fields = args.fields.unwrap_or_else(|| "{}".to_string());
+
+    match conn.execute(
+        "INSERT INTO setting_cards (id, project_id, card_type, name, fields, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
+        rusqlite::params![id, args.project_id, args.card_type, args.name, fields, now, now],
+    ) {
+        Ok(_) => format!("设定卡已创建: [{}] {} (id: {})", args.card_type, args.name, id),
+        Err(e) => format!("创建设定卡失败: {}", e),
+    }
+}
+
+/// 更新设定卡
+fn tool_update_setting_card(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        card_id: String,
+        #[serde(default)]
+        name: Option<String>,
+        #[serde(default)]
+        card_type: Option<String>,
+        #[serde(default)]
+        fields: Option<String>,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let now = chrono::Utc::now().to_rfc3339();
+    let mut updates: Vec<String> = Vec::new();
+    let mut params: Vec<Box<dyn rusqlite::types::ToSql>> = vec![];
+
+    if let Some(name) = &args.name {
+        updates.push("name = ?".to_string());
+        params.push(Box::new(name.clone()));
+    }
+    if let Some(card_type) = &args.card_type {
+        updates.push("card_type = ?".to_string());
+        params.push(Box::new(card_type.clone()));
+    }
+    if let Some(fields) = &args.fields {
+        updates.push("fields = ?".to_string());
+        params.push(Box::new(fields.clone()));
+    }
+
+    if updates.is_empty() {
+        return "没有需要更新的字段".to_string();
+    }
+
+    updates.push("updated_at = ?".to_string());
+    params.push(Box::new(now));
+    params.push(Box::new(args.card_id.clone()));
+
+    let sql = format!("UPDATE setting_cards SET {} WHERE id = ?", updates.join(", "));
+
+    match conn.execute(&sql, rusqlite::params_from_iter(params.iter().map(|p| p.as_ref()))) {
+        Ok(0) => format!("设定卡 {} 不存在", args.card_id),
+        Ok(_) => format!("设定卡 {} 已更新", args.card_id),
+        Err(e) => format!("更新设定卡失败: {}", e),
+    }
+}
+
+/// 删除设定卡
+fn tool_delete_setting_card(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        card_id: String,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let name: Option<String> = conn
+        .query_row("SELECT name FROM setting_cards WHERE id = ?1", rusqlite::params![args.card_id], |row| row.get(0))
+        .ok();
+
+    match conn.execute("DELETE FROM setting_cards WHERE id = ?1", rusqlite::params![args.card_id]) {
+        Ok(0) => format!("设定卡 {} 不存在", args.card_id),
+        Ok(_) => format!("设定卡已删除: {} (id: {})", name.unwrap_or_default(), args.card_id),
+        Err(e) => format!("删除设定卡失败: {}", e),
+    }
+}
+
+/// 查询对话历史
+fn tool_query_conversations(db: &Mutex<Connection>, args: &str) -> String {
+    #[derive(serde::Deserialize)]
+    struct Args {
+        conversation_id: String,
+        #[serde(default)]
+        limit: Option<i64>,
+    }
+    let args: Args = match serde_json::from_str(args) {
+        Ok(a) => a,
+        Err(e) => return format!("参数解析失败: {}", e),
+    };
+
+    let conn = match db.lock() {
+        Ok(c) => c,
+        Err(e) => return format!("获取数据库锁失败: {}", e),
+    };
+
+    let limit = args.limit.unwrap_or(20);
+    let mut stmt = match conn.prepare(
+        &format!("SELECT role, content FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC LIMIT ?2")
+    ) {
+        Ok(s) => s,
+        Err(e) => return format!("查询对话失败: {}", e),
+    };
+
+    let rows = match stmt.query_map(rusqlite::params![args.conversation_id, limit], |row| {
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+    }) {
+        Ok(r) => r,
+        Err(e) => return format!("查询对话失败: {}", e),
+    };
+
+    let messages: Vec<_> = match rows.collect() {
+        Ok(c) => c,
+        Err(e) => return format!("读取对话失败: {}", e),
+    };
+
+    if messages.is_empty() {
+        return "该对话暂无消息".to_string();
+    }
+
+    let mut output = String::from("【对话历史】\n");
+    for (role, content) in messages {
+        let role_label = if role == "user" { "用户" } else { "助手" };
+        let preview = if content.len() > 200 {
+            format!("{}...", &content[..200])
+        } else {
+            content
+        };
+        output.push_str(&format!("[{}]: {}\n", role_label, preview));
+    }
+    output
 }
