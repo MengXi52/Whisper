@@ -51,7 +51,7 @@ export const SettingCardList: React.FC = () => {
   return (
     <div className="py-1">
       {Object.keys(grouped).length === 0 ? (
-        <div className="px-4 py-3 text-xs text-text-tertiary">暂无设定卡</div>
+        <div className="px-3 py-2 text-xs text-text-tertiary">暂无设定卡</div>
       ) : (
         (Object.entries(grouped) as [CardType, typeof settingCards][]).map(([type, cards]) => (
           <div key={type} className="mb-1">
@@ -66,10 +66,10 @@ export const SettingCardList: React.FC = () => {
             {cards.map((card) => (
               <div
                 key={card.id}
-                className="group flex items-center gap-1 px-3 py-1.5 pl-7 hover:bg-bg-hover rounded-md transition-colors cursor-pointer"
+                className="group flex items-center gap-1 px-2 py-1 hover:bg-bg-hover rounded-md transition-colors cursor-pointer"
                 onClick={() => selectCard(card)}
               >
-                <span className="flex-1 text-sm text-text-primary truncate min-w-0">
+                <span className="flex-1 text-xs text-text-primary truncate min-w-0">
                   {card.name}
                 </span>
                 <button

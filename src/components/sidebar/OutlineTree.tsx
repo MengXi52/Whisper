@@ -10,6 +10,7 @@ export const OutlineTree: React.FC = () => {
   const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
   const [newChapterTitle, setNewChapterTitle] = useState('');
   const [showNewInput, setShowNewInput] = useState(false);
+  const [visibleCount, setVisibleCount] = useState(5);
   const inputRef = React.useRef<HTMLInputElement>(null);
 
   /* 按层级组织章节 */
@@ -62,7 +63,7 @@ export const OutlineTree: React.FC = () => {
       <div key={chapter.id}>
         <div
           className={clsx(
-            'group flex items-center gap-1 px-2 py-1.5 rounded-md cursor-pointer text-sm',
+            'group flex items-center gap-1 px-2 py-1 rounded-md cursor-pointer text-xs',
             'hover:bg-bg-hover transition-colors',
             isSelected && 'bg-accent-light text-accent'
           )}
@@ -78,14 +79,14 @@ export const OutlineTree: React.FC = () => {
               }}
               className="p-0.5 text-text-tertiary hover:text-text-primary"
             >
-              {isExpanded ? <ChevronDown size={12} /> : <ChevronRight size={12} />}
+              {isExpanded ? <ChevronDown size={10} /> : <ChevronRight size={10} />}
             </button>
           ) : (
-            <span className="w-4" />
+            <span className="w-3.5" />
           )}
 
           {/* 章节图标 */}
-          <FileText size={13} className="text-text-tertiary shrink-0" />
+          <FileText size={11} className="text-text-tertiary shrink-0" />
 
           {/* 标题 */}
           <span className="flex-1 truncate text-text-primary">{chapter.title}</span>
@@ -123,9 +124,19 @@ export const OutlineTree: React.FC = () => {
   return (
     <div className="py-1">
       {rootChapters.length === 0 ? (
-        <div className="px-4 py-3 text-xs text-text-tertiary">暂无章节</div>
+        <div className="px-3 py-2 text-xs text-text-tertiary">暂无章节</div>
       ) : (
-        rootChapters.map((chapter) => renderChapter(chapter))
+        <>
+          {rootChapters.slice(0, visibleCount).map((chapter) => renderChapter(chapter))}
+          {rootChapters.length > visibleCount && (
+            <button
+              onClick={() => setVisibleCount((c) => c + 10)}
+              className="w-full text-left px-3 py-1 text-[11px] text-text-tertiary hover:text-accent hover:bg-bg-hover rounded transition-colors"
+            >
+              查看更多章节...
+            </button>
+          )}
+        </>
       )}
 
       {/* 新增章节 */}

@@ -19,6 +19,7 @@ export const Sidebar: React.FC = () => {
   const [historyOpen, setHistoryOpen] = useState(true);
   const [showNewProjectInput, setShowNewProjectInput] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
+  const [historyVisibleCount, setHistoryVisibleCount] = useState(8);
 
   return (
     <aside className="w-[240px] h-full flex flex-col bg-bg-sidebar border-r border-border shrink-0 overflow-hidden">
@@ -144,37 +145,51 @@ export const Sidebar: React.FC = () => {
           </button>
           {historyOpen && (
             <div className="ml-1 space-y-0.5">
-              {(projectConversations()).length === 0 ? (
-                        <div className="px-3 py-2 text-[11px] text-text-tertiary">暂无对话</div>
-                      ) : (
-                        (projectConversations()).map((conv) => (
-                  <div
-                    key={conv.id}
-                    className={clsx(
-                      'group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs cursor-pointer transition-all',
-                      currentConversation?.id === conv.id
-                        ? 'bg-accent/10 text-accent font-medium'
-                        : 'text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary'
+              {(function() {
+                const convs = projectConversations();
+                const visibleConvs = convs.slice(0, historyVisibleCount);
+                return visibleConvs.length === 0 ? (
+                  <div className="px-3 py-2 text-xs text-text-tertiary">暂无对话</div>
+                ) : (
+                  <>
+                    {visibleConvs.map((conv) => (
+                      <div
+                        key={conv.id}
+                        className={clsx(
+                          'group flex items-center gap-1.5 px-2 py-1.5 rounded-md text-xs cursor-pointer transition-all',
+                          currentConversation?.id === conv.id
+                            ? 'bg-accent/10 text-accent font-medium'
+                            : 'text-text-secondary hover:bg-bg-hover/60 hover:text-text-primary'
+                        )}
+                        onClick={() => selectConversation(conv)}
+                      >
+                        <MessageSquare size={11} className="shrink-0 opacity-40" />
+                        <span className="truncate flex-1">
+                          {conv.title || '新对话'}
+                        </span>
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            deleteConversation(conv.id);
+                          }}
+                          className="shrink-0 p-0.5 rounded text-text-tertiary hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                          title="删除对话"
+                        >
+                          <Trash2 size={11} />
+                        </button>
+                      </div>
+                    ))}
+                    {convs.length > historyVisibleCount && (
+                      <button
+                        onClick={() => setHistoryVisibleCount((c) => c + 8)}
+                        className="w-full text-left px-2 py-1 text-[11px] text-text-tertiary hover:text-accent hover:bg-bg-hover rounded transition-colors"
+                      >
+                        查看更多对话...
+                      </button>
                     )}
-                    onClick={() => selectConversation(conv)}
-                  >
-                    <MessageSquare size={11} className="shrink-0 opacity-40" />
-                    <span className="truncate flex-1">
-                      {conv.title || '新对话'}
-                    </span>
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        deleteConversation(conv.id);
-                      }}
-                      className="shrink-0 p-0.5 rounded text-text-tertiary hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                      title="删除对话"
-                    >
-                      <Trash2 size={11} />
-                    </button>
-                  </div>
-                ))
-              )}
+                  </>
+                );
+              })()}
             </div>
           )}
         </div>
