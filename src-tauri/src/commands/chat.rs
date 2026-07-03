@@ -264,7 +264,7 @@ pub async fn send_message(
     log_info!("STREAM", "调用 stream_chat | 模型: {} | 消息数: {} | 工具数: {}",
         use_model, messages.len(), tools.as_ref().map(|t| t.len()).unwrap_or(0));
 
-    let full_content = crate::llm::client::stream_chat(
+    let (full_content, token_usage) = crate::llm::client::stream_chat(
         &app,
         &db.0,
         &base_url,
@@ -303,31 +303,37 @@ pub async fn send_message(
 
     // 保存助手消息到数据库（仅当有内容时才保存，避免工具调用流程产生空白消息）
     let now = chrono::Utc::now().to_rfc3339();
+    let (p_tokens, c_tokens, t_tokens) = match &token_usage {
+        Some(u) => (u.prompt_tokens, u.completion_tokens, u.total_tokens),
+        None => (0u64, 0u64, 0u64),
+    };
     if !full_content.trim().is_empty() {
         let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
         conn.execute(
-            "INSERT INTO messages (id, conversation_id, role, content, model, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
-            rusqlite::params![assistant_msg_id, conversation_id, "assistant", full_content, use_model, now],
+            "INSERT INTO messages (id, conversation_id, role, content, model, prompt_tokens, completion_tokens, total_tokens, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            rusqlite::params![assistant_msg_id, conversation_id, "assistant", full_content, use_model, p_tokens, c_tokens, t_tokens, now],
         ).map_err(|e| format!("保存助手消息失败: {}", e))?;
-        log_info!("STEP11", "助手消息已保存 | 消息ID: {} | 内容: {} 字符", assistant_msg_id, full_content.len());
+        log_info!("STEP11", "助手消息已保存 | 消息ID: {} | 内容: {} 字符 | tokens: prompt={} completion={} total={}",
+            assistant_msg_id, full_content.len(), p_tokens, c_tokens, t_tokens);
     } else {
         log_info!("STEP11", "助手最终内容为空，跳过保存（可能 LLM 仅触发工具调用未生成回复）");
     }
     {
         let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
-        // 更新会话标题（如果是第一条用户消息）
+        // 更新会话标题、累计 token 用量、更新时间
         conn.execute(
-            "UPDATE conversations SET updated_at = ?1, title = CASE WHEN title = '' THEN SUBSTR(?2, 1, 20) ELSE title END WHERE id = ?3",
-            rusqlite::params![now, content, conversation_id],
+            "UPDATE conversations SET updated_at = ?1, total_tokens = total_tokens + ?2, title = CASE WHEN title = '' THEN SUBSTR(?3, 1, 20) ELSE title END WHERE id = ?4",
+            rusqlite::params![now, t_tokens, content, conversation_id],
         ).map_err(|e| format!("更新会话失败: {}", e))?;
     }
 
-    // 发送完成事件
+    // 发送完成事件（携带 token 用量，供前端状态栏显示）
     let done_event = ChunkEvent {
         conversation_id: conversation_id.clone(),
         message_id: assistant_msg_id.clone(),
         content: String::new(),
         done: true,
+        usage: token_usage,
     };
     app.emit("chat:chunk", &done_event)
         .map_err(|e| format!("发送完成事件失败: {}", e))?;
@@ -354,7 +360,7 @@ pub fn get_messages(
 ) -> Result<Vec<Message>, String> {
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     let mut stmt = conn
-        .prepare("SELECT id, conversation_id, role, content, model, created_at, tool_calls, tool_call_id FROM messages WHERE conversation_id = ?1 AND role != 'tool' ORDER BY created_at ASC")
+        .prepare("SELECT id, conversation_id, role, content, model, prompt_tokens, completion_tokens, total_tokens, created_at, tool_calls, tool_call_id FROM messages WHERE conversation_id = ?1 AND role != 'tool' ORDER BY created_at ASC")
         .map_err(|e| format!("准备查询失败: {}", e))?;
     let rows = stmt
         .query_map(rusqlite::params![conversation_id], |row| {
@@ -364,9 +370,12 @@ pub fn get_messages(
                 role: row.get(2)?,
                 content: row.get(3)?,
                 model: row.get(4)?,
-                created_at: row.get(5)?,
-                tool_calls: row.get(6)?,
-                tool_call_id: row.get(7)?,
+                prompt_tokens: row.get(5)?,
+                completion_tokens: row.get(6)?,
+                total_tokens: row.get(7)?,
+                created_at: row.get(8)?,
+                tool_calls: row.get(9)?,
+                tool_call_id: row.get(10)?,
             })
         })
         .map_err(|e| format!("查询消息失败: {}", e))?;
@@ -403,6 +412,7 @@ pub fn create_conversation(
         phase,
         skill_ids: skill_ids.unwrap_or_default(),
         context_chapter_id,
+        total_tokens: 0,
         created_at: now.clone(),
         updated_at: now,
     })
@@ -446,7 +456,7 @@ pub fn delete_messages_after(db: State<'_, DbState>, conversation_id: String, me
 pub fn get_conversation(db: State<'_, DbState>, id: String) -> Result<Conversation, String> {
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     let row = conn.query_row(
-        "SELECT id, project_id, title, phase, skill_ids, context_chapter_id, created_at, updated_at FROM conversations WHERE id = ?1",
+        "SELECT id, project_id, title, phase, skill_ids, context_chapter_id, total_tokens, created_at, updated_at FROM conversations WHERE id = ?1",
         rusqlite::params![id],
         |row| {
             let skill_ids_str: String = row.get(4)?;
@@ -459,8 +469,9 @@ pub fn get_conversation(db: State<'_, DbState>, id: String) -> Result<Conversati
                 phase: row.get(3)?,
                 skill_ids,
                 context_chapter_id: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                total_tokens: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
             })
         },
     ).map_err(|e| format!("查询会话失败: {}", e))?;
@@ -472,7 +483,7 @@ pub fn get_conversation(db: State<'_, DbState>, id: String) -> Result<Conversati
 pub fn list_conversations(db: State<'_, DbState>) -> Result<Vec<Conversation>, String> {
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     let mut stmt = conn
-        .prepare("SELECT id, project_id, title, phase, skill_ids, context_chapter_id, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
+        .prepare("SELECT id, project_id, title, phase, skill_ids, context_chapter_id, total_tokens, created_at, updated_at FROM conversations ORDER BY updated_at DESC")
         .map_err(|e| format!("准备查询失败: {}", e))?;
     let rows = stmt
         .query_map([], |row| {
@@ -486,8 +497,9 @@ pub fn list_conversations(db: State<'_, DbState>) -> Result<Vec<Conversation>, S
                 phase: row.get(3)?,
                 skill_ids,
                 context_chapter_id: row.get(5)?,
-                created_at: row.get(6)?,
-                updated_at: row.get(7)?,
+                total_tokens: row.get(6)?,
+                created_at: row.get(7)?,
+                updated_at: row.get(8)?,
             })
         })
         .map_err(|e| format!("查询会话失败: {}", e))?;

@@ -1,4 +1,4 @@
-use crate::models::{ChatMessage, ChatRequest, ChunkEvent};
+use crate::models::{ChatMessage, ChatRequest, ChunkEvent, StreamOptions, TokenUsage};
 use crate::{log_debug, log_error, log_info, log_warn};
 use eventsource_stream::Eventsource;
 use futures_util::StreamExt;
@@ -22,6 +22,7 @@ struct ToolCallResult {
 ///
 /// 通过 SSE 接收响应，逐 chunk 通过 Tauri Event 推送到前端
 /// 如果模型返回 tool_calls，会自动执行工具并重新请求，直到返回纯内容
+/// 返回 (最终内容, 累计 token 用量)
 pub async fn stream_chat(
     app: &AppHandle,
     db: &Mutex<Connection>,
@@ -33,13 +34,15 @@ pub async fn stream_chat(
     conversation_id: &str,
     message_id: &str,
     cancel_token: &Mutex<bool>,
-) -> Result<String, String> {
+) -> Result<(String, Option<TokenUsage>), String> {
     let url = format!("{}/chat/completions", base_url.trim_end_matches('/'));
     let client = Client::new();
 
     // 最大工具调用轮次，防止无限循环
     let max_tool_rounds = 10;
     let mut tool_round = 0;
+    // 累计所有轮次的 token 用量（工具调用会多轮请求）
+    let mut accumulated_usage: Option<TokenUsage> = None;
 
     loop {
         tool_round += 1;
@@ -57,6 +60,8 @@ pub async fn stream_chat(
             temperature: Some(0.7),
             max_tokens: Some(4096),
             tools: tools.clone(),
+            // 启用流式 usage 返回：OpenAI 兼容 API 会在最后一个 chunk 的 usage 字段返回真实 token 数
+            stream_options: Some(StreamOptions { include_usage: true }),
         };
 
         let response = client
@@ -85,6 +90,9 @@ pub async fn stream_chat(
         // 标记本轮是否触发了工具调用（用于 break 后判断是否需要继续下一轮）
         // 不能依赖 tool_calls_accumulated.is_empty()，因为在 break 前已清空
         let mut had_tool_calls = false;
+        // 本轮 API 返回的 usage（OpenAI 兼容 API 在 stream_options.include_usage=true 时
+        // 会在最后一个 chunk 的顶层 usage 字段返回）
+        let mut round_usage: Option<TokenUsage> = None;
 
         tokio::pin!(stream);
 
@@ -111,6 +119,16 @@ pub async fn stream_chat(
 
                     match serde_json::from_str::<serde_json::Value>(data) {
                         Ok(json) => {
+                            // 提取 usage（OpenAI 兼容 API 在 stream_options.include_usage=true 时
+                            // 会在最后一个 chunk 顶层返回 usage，此时 choices 通常为空数组）
+                            if let Some(usage) = json.get("usage") {
+                                if let Some(u) = parse_usage(usage) {
+                                    log_info!("STREAM", "收到 usage | prompt: {} | completion: {} | total: {}",
+                                        u.prompt_tokens, u.completion_tokens, u.total_tokens);
+                                    round_usage = Some(u);
+                                }
+                            }
+
                             if let Some(choices) = json.get("choices") {
                                 if let Some(first_choice) = choices.get(0) {
                                     if let Some(delta) = first_choice.get("delta") {
@@ -125,6 +143,7 @@ pub async fn stream_chat(
                                                     message_id: message_id.to_string(),
                                                     content: text.to_string(),
                                                     done: false,
+                                                    usage: None,
                                                 };
                                                 let _ = app.emit("chat:chunk", &chunk_event);
                                             }
@@ -295,13 +314,48 @@ pub async fn stream_chat(
         // 如果本轮触发了工具调用，继续下一轮请求让 LLM 基于工具结果生成最终回复
         // 注意：不能用 tool_calls_accumulated.is_empty() 判断，因为在 break 前已清空
         if had_tool_calls {
+            // 累计本轮 usage（工具调用轮次的 prompt_tokens 也应计入）
+            accumulate_usage(&mut accumulated_usage, round_usage);
             log_info!("STREAM", "本轮已处理 tool_calls，进入第 {} 轮 (累积消息: {} 条)",
                 tool_round + 1, messages.len());
             continue;
         }
 
-        log_info!("STREAM", "LLM 返回最终内容 | 共 {} 字符 | 总轮次: {} | 总 chunks: {}", full_content.len(), tool_round, chunk_count);
-        return Ok(full_content);
+        // 累计最后一轮的 usage
+        accumulate_usage(&mut accumulated_usage, round_usage);
+
+        log_info!("STREAM", "LLM 返回最终内容 | 共 {} 字符 | 总轮次: {} | 总 chunks: {}",
+            full_content.len(), tool_round, chunk_count);
+        if let Some(ref u) = accumulated_usage {
+            log_info!("STREAM", "累计 token 用量 | prompt: {} | completion: {} | total: {}",
+                u.prompt_tokens, u.completion_tokens, u.total_tokens);
+        } else {
+            log_info!("STREAM", "未收到 usage 字段（API 可能不支持 stream_options.include_usage）");
+        }
+        return Ok((full_content, accumulated_usage));
+    }
+}
+
+/// 从 JSON 解析 usage 字段
+fn parse_usage(usage: &serde_json::Value) -> Option<TokenUsage> {
+    Some(TokenUsage {
+        prompt_tokens: usage.get("prompt_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+        completion_tokens: usage.get("completion_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+        total_tokens: usage.get("total_tokens").and_then(|v| v.as_u64()).unwrap_or(0),
+    })
+}
+
+/// 累计 token 用量（多轮工具调用场景）
+fn accumulate_usage(acc: &mut Option<TokenUsage>, round: Option<TokenUsage>) {
+    if let Some(r) = round {
+        match acc {
+            Some(a) => {
+                a.prompt_tokens += r.prompt_tokens;
+                a.completion_tokens += r.completion_tokens;
+                a.total_tokens += r.total_tokens;
+            }
+            None => *acc = Some(r),
+        }
     }
 }
 

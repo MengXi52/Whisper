@@ -24,6 +24,7 @@ pub fn init_db() -> Result<Connection, String> {
 
     create_tables(&conn)?;
     migrate_messages_table(&conn)?;
+    migrate_conversations_table(&conn)?;
     init_builtin_skills(&conn)?;
 
     Ok(conn)
@@ -48,6 +49,36 @@ fn migrate_messages_table(conn: &Connection) -> Result<(), String> {
     if !columns.iter().any(|c| c == "tool_call_id") {
         conn.execute("ALTER TABLE messages ADD COLUMN tool_call_id TEXT", [])
             .map_err(|e| format!("添加 tool_call_id 字段失败: {}", e))?;
+    }
+    if !columns.iter().any(|c| c == "prompt_tokens") {
+        conn.execute("ALTER TABLE messages ADD COLUMN prompt_tokens INTEGER DEFAULT 0", [])
+            .map_err(|e| format!("添加 prompt_tokens 字段失败: {}", e))?;
+    }
+    if !columns.iter().any(|c| c == "completion_tokens") {
+        conn.execute("ALTER TABLE messages ADD COLUMN completion_tokens INTEGER DEFAULT 0", [])
+            .map_err(|e| format!("添加 completion_tokens 字段失败: {}", e))?;
+    }
+    if !columns.iter().any(|c| c == "total_tokens") {
+        conn.execute("ALTER TABLE messages ADD COLUMN total_tokens INTEGER DEFAULT 0", [])
+            .map_err(|e| format!("添加 total_tokens 字段失败: {}", e))?;
+    }
+    Ok(())
+}
+
+/// 迁移 conversations 表：添加 total_tokens 字段（累计整个对话的 token 用量）
+fn migrate_conversations_table(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(conversations)")
+        .map_err(|e| format!("查询 conversations 表结构失败: {}", e))?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("读取 conversations 表结构失败: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("收集 conversations 表字段失败: {}", e))?;
+
+    if !columns.iter().any(|c| c == "total_tokens") {
+        conn.execute("ALTER TABLE conversations ADD COLUMN total_tokens INTEGER DEFAULT 0", [])
+            .map_err(|e| format!("添加 total_tokens 字段失败: {}", e))?;
     }
     Ok(())
 }
@@ -102,6 +133,7 @@ fn create_tables(conn: &Connection) -> Result<(), String> {
             phase TEXT DEFAULT 'ideation',
             skill_ids TEXT DEFAULT '[]',
             context_chapter_id TEXT,
+            total_tokens INTEGER DEFAULT 0,
             created_at TEXT NOT NULL,
             updated_at TEXT NOT NULL
         );
@@ -112,6 +144,9 @@ fn create_tables(conn: &Connection) -> Result<(), String> {
             role TEXT NOT NULL,
             content TEXT NOT NULL,
             model TEXT,
+            prompt_tokens INTEGER DEFAULT 0,
+            completion_tokens INTEGER DEFAULT 0,
+            total_tokens INTEGER DEFAULT 0,
             created_at TEXT NOT NULL
         );
 

@@ -57,6 +57,8 @@ export interface Conversation {
   phase: WritingPhase;
   skill_ids: string[];
   context_chapter_id: string | null;
+  /** 该对话累计消耗的总 token 数 */
+  total_tokens: number;
   created_at: string;
   updated_at: string;
 }
@@ -68,6 +70,12 @@ export interface Message {
   role: 'user' | 'assistant' | 'system';
   content: string;
   model: string;
+  /** 该消息对应的 prompt token 数（仅 role=assistant 的最终回复消息有值） */
+  prompt_tokens?: number;
+  /** 该消息生成的 completion token 数 */
+  completion_tokens?: number;
+  /** 该消息对应的总 token 数 */
+  total_tokens?: number;
   created_at: string;
   /** 助手消息携带的工具调用（JSON 字符串），仅 role=assistant 且触发了工具调用时有值 */
   tool_calls?: string;

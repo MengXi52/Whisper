@@ -57,6 +57,8 @@ pub struct Conversation {
     #[serde(with = "conv_serde")]
     pub skill_ids: Vec<String>,
     pub context_chapter_id: Option<String>,
+    /// 该对话累计消耗的总 token 数
+    pub total_tokens: u64,
     pub created_at: String,
     pub updated_at: String,
 }
@@ -94,6 +96,15 @@ pub struct Message {
     pub role: String,
     pub content: String,
     pub model: Option<String>,
+    /// 该消息对应的 prompt token 数（仅 role=assistant 的最终回复消息有值）
+    #[serde(default)]
+    pub prompt_tokens: u64,
+    /// 该消息生成的 completion token 数
+    #[serde(default)]
+    pub completion_tokens: u64,
+    /// 该消息对应的总 token 数
+    #[serde(default)]
+    pub total_tokens: u64,
     pub created_at: String,
     /// 助手消息携带的工具调用（JSON 字符串），仅 role=assistant 且触发了工具调用时有值
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -158,6 +169,16 @@ pub struct ChatRequest {
     pub max_tokens: Option<i64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub tools: Option<Vec<serde_json::Value>>,
+    /// 启用流式响应中的 usage 字段返回（OpenAI 兼容 API）
+    /// 在最后一个 chunk 会返回 prompt_tokens / completion_tokens / total_tokens
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub stream_options: Option<StreamOptions>,
+}
+
+/// 流式响应选项
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StreamOptions {
+    pub include_usage: bool,
 }
 
 /// SSE chunk 事件数据
@@ -167,4 +188,18 @@ pub struct ChunkEvent {
     pub message_id: String,
     pub content: String,
     pub done: bool,
+    /// token 用量（仅在 done=true 且 API 返回 usage 时有值）
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub usage: Option<TokenUsage>,
+}
+
+/// token 用量
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct TokenUsage {
+    /// 提示词 token 数
+    pub prompt_tokens: u64,
+    /// 生成 token 数
+    pub completion_tokens: u64,
+    /// 总 token 数
+    pub total_tokens: u64,
 }

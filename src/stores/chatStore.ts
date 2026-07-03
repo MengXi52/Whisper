@@ -149,6 +149,9 @@ export const useChatStore = create<ChatState>((set, get) => ({
         loading: false,
         activeSkillIds: conversation.skill_ids || [],
       });
+      /* 读取该对话累计的 total_tokens 并显示在状态栏 */
+      const { useUIStore } = await import('@/stores/uiStore');
+      useUIStore.getState().setTokenCount(conversation.total_tokens ?? 0);
     } catch (e) {
       set({ error: String(e), loading: false });
     }
@@ -277,8 +280,19 @@ export const useChatStore = create<ChatState>((set, get) => ({
   },
 
   initChunkListener: async () => {
-    const unlisten = await listen<{ id: string; content: string; done: boolean }>('chat:chunk', (event) => {
-      const { content, done } = event.payload;
+    /* 监听 chat:chunk 事件，payload 含 usage 字段（仅 done=true 时有值） */
+    interface ChunkPayload {
+      id?: string;
+      content: string;
+      done: boolean;
+      usage?: {
+        prompt_tokens: number;
+        completion_tokens: number;
+        total_tokens: number;
+      };
+    }
+    const unlisten = await listen<ChunkPayload>('chat:chunk', (event) => {
+      const { content, done, usage } = event.payload;
 
       if (done) {
         /* 流式响应完成，保存消息 */
@@ -301,6 +315,14 @@ export const useChatStore = create<ChatState>((set, get) => ({
           }
           return { isGenerating: false, streamingContent: '' };
         });
+
+        /* 更新底部状态栏 token 用量（累加本次 API 返回的真实 total_tokens） */
+        if (usage && usage.total_tokens > 0) {
+          import('@/stores/uiStore').then(({ useUIStore }) => {
+            const current = useUIStore.getState().tokenCount;
+            useUIStore.getState().setTokenCount(current + usage.total_tokens);
+          });
+        }
 
         /* 刷新侧边栏数据（LLM 可能通过工具创建了新的章节或设定卡） */
         const { currentConversation } = get();
