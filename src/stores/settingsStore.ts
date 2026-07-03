@@ -140,8 +140,22 @@ export const useSettingsStore = create<SettingsState>((set, get) => ({
   updateSettingCard: async (id, name, fields, cardType) => {
     try {
       await tauri.updateSettingCard(id, name, fields, cardType);
-      /* 重新加载当前项目的设定卡列表 */
-      const projectId = get().settingCards.find((c) => c.id === id)?.project_id;
+
+      /* 直接用保存的值更新 currentCard，确保 isDirty 检测正确（不依赖列表重载） */
+      const current = get().currentCard;
+      if (current && current.id === id) {
+        set({
+          currentCard: {
+            ...current,
+            name: name ?? current.name,
+            fields: fields ? (JSON.parse(fields) as Record<string, string>) : current.fields,
+            card_type: (cardType as SettingCard['card_type']) ?? current.card_type,
+          },
+        });
+      }
+
+      /* 重新加载设定卡列表（用于侧边栏显示） */
+      const projectId = current?.project_id ?? get().settingCards.find((c) => c.id === id)?.project_id;
       if (projectId) {
         await get().loadSettingCards(projectId);
       }

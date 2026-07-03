@@ -3,7 +3,7 @@ import React from 'react';
 import { clsx } from 'clsx';
 
 type ButtonVariant = 'primary' | 'secondary' | 'ghost' | 'danger';
-type ButtonSize = 'sm' | 'md' | 'lg';
+type ButtonSize = 'xs' | 'sm' | 'md' | 'lg';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
   variant?: ButtonVariant;
@@ -24,6 +24,7 @@ const variantStyles: Record<ButtonVariant, string> = {
 };
 
 const sizeStyles: Record<ButtonSize, string> = {
+  xs: 'px-1.5 py-0.5 text-[11px] gap-0.5',
   sm: 'px-2.5 py-1 text-xs gap-1',
   md: 'px-4 py-2 text-sm gap-1.5',
   lg: 'px-6 py-2.5 text-base gap-2',
