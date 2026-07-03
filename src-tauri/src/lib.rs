@@ -31,6 +31,8 @@ pub fn run() {
             commands::chat::delete_conversation,
             commands::chat::get_conversation,
             commands::chat::list_conversations,
+            commands::chat::update_message,
+            commands::chat::delete_messages_after,
             // 项目命令
             commands::project::create_project,
             commands::project::list_projects,

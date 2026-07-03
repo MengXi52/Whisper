@@ -48,6 +48,8 @@ interface ChatState {
   sendMessage: (content: string) => Promise<void>;
   /** 中断生成 */
   abortGeneration: () => Promise<void>;
+  /** 编辑消息（更新内容并删除后续所有消息） */
+  editMessage: (messageId: string, newContent: string) => Promise<void>;
   /** 加载技能列表 */
   loadSkills: () => Promise<void>;
   /** 切换技能激活状态 */
@@ -221,6 +223,27 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
     } catch (e) {
       set({ error: String(e), isGenerating: false });
+    }
+  },
+
+  editMessage: async (messageId, newContent) => {
+    const { currentConversation, messages } = get();
+    if (!currentConversation) return;
+
+    try {
+      /* 1. 更新消息内容 */
+      await tauri.updateMessage(messageId, newContent);
+      /* 2. 删除该消息之后的所有消息（保持上下文一致性） */
+      await tauri.deleteMessagesAfter(currentConversation.id, messageId);
+      /* 3. 更新本地消息列表 */
+      const msgIndex = messages.findIndex((m) => m.id === messageId);
+      if (msgIndex === -1) return;
+      const updatedMessages = messages.slice(0, msgIndex + 1).map((m, i) =>
+        i === msgIndex ? { ...m, content: newContent } : m
+      );
+      set({ messages: updatedMessages });
+    } catch (e) {
+      set({ error: String(e) });
     }
   },
 

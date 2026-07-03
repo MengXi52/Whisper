@@ -7,7 +7,7 @@ import { ChatInput } from './ChatInput';
 import type { Message } from '@/types';
 
 export const ChatView: React.FC = () => {
-  const { messages, isGenerating, streamingContent, currentConversation, initChunkListener } = useChatStore();
+  const { messages, isGenerating, streamingContent, currentConversation, initChunkListener, editMessage } = useChatStore();
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -54,7 +54,7 @@ export const ChatView: React.FC = () => {
         ) : (
           <div className="py-4">
             {messages.map((msg) => (
-              <MessageBubble key={msg.id} message={msg} />
+              <MessageBubble key={msg.id} message={msg} onEdit={editMessage} />
             ))}
             {streamingMessage && (
               <MessageBubble message={streamingMessage} isStreaming />

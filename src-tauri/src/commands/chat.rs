@@ -402,6 +402,30 @@ pub fn delete_conversation(db: State<'_, DbState>, id: String) -> Result<(), Str
     Ok(())
 }
 
+/// 更新消息内容
+#[tauri::command]
+pub fn update_message(db: State<'_, DbState>, id: String, content: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    conn.execute(
+        "UPDATE messages SET content = ?1 WHERE id = ?2",
+        rusqlite::params![content, id],
+    )
+    .map_err(|e| format!("更新消息失败: {}", e))?;
+    Ok(())
+}
+
+/// 删除某条消息之后的所有消息（不含该消息本身）
+#[tauri::command]
+pub fn delete_messages_after(db: State<'_, DbState>, conversation_id: String, message_id: String) -> Result<(), String> {
+    let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
+    conn.execute(
+        "DELETE FROM messages WHERE conversation_id = ?1 AND created_at > (SELECT created_at FROM messages WHERE id = ?2)",
+        rusqlite::params![conversation_id, message_id],
+    )
+    .map_err(|e| format!("删除后续消息失败: {}", e))?;
+    Ok(())
+}
+
 /// 获取单个会话详情
 #[tauri::command]
 pub fn get_conversation(db: State<'_, DbState>, id: String) -> Result<Conversation, String> {

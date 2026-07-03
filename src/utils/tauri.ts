@@ -107,6 +107,14 @@ export const getMessages = (conversationId: string) =>
 /** 删除会话 */
 export const deleteConversation = (id: string) => tauriInvoke<void>('delete_conversation', { id });
 
+/** 更新消息内容 */
+export const updateMessage = (id: string, content: string) =>
+  tauriInvoke<void>('update_message', { id, content });
+
+/** 删除某条消息之后的所有消息 */
+export const deleteMessagesAfter = (conversationId: string, messageId: string) =>
+  tauriInvoke<void>('delete_messages_after', { conversationId, messageId });
+
 // ===== 技能相关 =====
 
 /** 获取技能列表 */
