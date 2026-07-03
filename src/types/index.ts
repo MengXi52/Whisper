@@ -69,6 +69,10 @@ export interface Message {
   content: string;
   model: string;
   created_at: string;
+  /** 助手消息携带的工具调用（JSON 字符串），仅 role=assistant 且触发了工具调用时有值 */
+  tool_calls?: string;
+  /** 工具结果消息关联的工具调用 ID，仅 role=tool 时有值（前端一般不展示 tool 消息） */
+  tool_call_id?: string;
 }
 
 /** 技能 */

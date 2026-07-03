@@ -23,9 +23,33 @@ pub fn init_db() -> Result<Connection, String> {
         .map_err(|e| format!("设置数据库模式失败: {}", e))?;
 
     create_tables(&conn)?;
+    migrate_messages_table(&conn)?;
     init_builtin_skills(&conn)?;
 
     Ok(conn)
+}
+
+/// 迁移 messages 表：添加 tool_calls 和 tool_call_id 字段（用于支持工具调用消息持久化）
+/// 使用 PRAGMA table_info 检查字段是否存在，避免重复 ALTER TABLE 报错
+fn migrate_messages_table(conn: &Connection) -> Result<(), String> {
+    let mut stmt = conn
+        .prepare("PRAGMA table_info(messages)")
+        .map_err(|e| format!("查询 messages 表结构失败: {}", e))?;
+    let columns: Vec<String> = stmt
+        .query_map([], |row| row.get::<_, String>(1))
+        .map_err(|e| format!("读取 messages 表结构失败: {}", e))?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| format!("收集 messages 表字段失败: {}", e))?;
+
+    if !columns.iter().any(|c| c == "tool_calls") {
+        conn.execute("ALTER TABLE messages ADD COLUMN tool_calls TEXT", [])
+            .map_err(|e| format!("添加 tool_calls 字段失败: {}", e))?;
+    }
+    if !columns.iter().any(|c| c == "tool_call_id") {
+        conn.execute("ALTER TABLE messages ADD COLUMN tool_call_id TEXT", [])
+            .map_err(|e| format!("添加 tool_call_id 字段失败: {}", e))?;
+    }
+    Ok(())
 }
 
 /// 创建所有数据表

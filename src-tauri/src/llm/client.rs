@@ -203,7 +203,31 @@ pub async fn stream_chat(
                                                     })
                                                 }).collect();
 
-                                                // 添加助手消息（包含 tool_calls）
+                                                // 将 tool_calls 序列化为字符串用于数据库存储
+                                                let tool_calls_str = serde_json::to_string(&tool_calls_json).unwrap_or_default();
+
+                                                // 保存助手消息（含 tool_calls）到数据库
+                                                let assistant_tool_msg_id = uuid::Uuid::new_v4().to_string();
+                                                let now_ts = chrono::Utc::now().to_rfc3339();
+                                                {
+                                                    if let Ok(conn) = db.lock() {
+                                                        let _ = conn.execute(
+                                                            "INSERT INTO messages (id, conversation_id, role, content, model, created_at, tool_calls, tool_call_id) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL)",
+                                                            rusqlite::params![
+                                                                assistant_tool_msg_id,
+                                                                conversation_id,
+                                                                "assistant",
+                                                                full_content.clone(),
+                                                                model,
+                                                                now_ts,
+                                                                tool_calls_str,
+                                                            ],
+                                                        );
+                                                    }
+                                                }
+                                                log_info!("STREAM", "工具调用助手消息已入库 | id: {} | tool_calls: {} 个", assistant_tool_msg_id, tool_calls_accumulated.len());
+
+                                                // 添加助手消息（包含 tool_calls）到内存消息列表
                                                 messages.push(ChatMessage {
                                                     role: "assistant".to_string(),
                                                     content: full_content.clone(),
@@ -211,8 +235,26 @@ pub async fn stream_chat(
                                                     tool_call_id: None,
                                                 });
 
-                                                // 添加工具结果消息（含 tool_call_id 关联）
+                                                // 保存工具结果消息到数据库，并添加到内存消息列表
                                                 for (tc, result) in tool_calls_accumulated.iter().zip(tool_results.iter()) {
+                                                    let tool_msg_id = uuid::Uuid::new_v4().to_string();
+                                                    let now_ts = chrono::Utc::now().to_rfc3339();
+                                                    {
+                                                        if let Ok(conn) = db.lock() {
+                                                            let _ = conn.execute(
+                                                                "INSERT INTO messages (id, conversation_id, role, content, model, created_at, tool_calls, tool_call_id) VALUES (?1, ?2, ?3, ?4, NULL, ?5, NULL, ?6)",
+                                                                rusqlite::params![
+                                                                    tool_msg_id,
+                                                                    conversation_id,
+                                                                    "tool",
+                                                                    result.clone(),
+                                                                    now_ts,
+                                                                    tc.tool_call_id,
+                                                                ],
+                                                            );
+                                                        }
+                                                    }
+
                                                     messages.push(ChatMessage {
                                                         role: "tool".to_string(),
                                                         content: result.clone(),
@@ -220,6 +262,7 @@ pub async fn stream_chat(
                                                         tool_call_id: Some(tc.tool_call_id.clone()),
                                                     });
                                                 }
+                                                log_info!("STREAM", "工具结果消息已入库 | 共 {} 条", tool_calls_accumulated.len());
 
                                                 full_content.clear();
                                                 tool_calls_accumulated.clear();

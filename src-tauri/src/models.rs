@@ -95,6 +95,12 @@ pub struct Message {
     pub content: String,
     pub model: Option<String>,
     pub created_at: String,
+    /// 助手消息携带的工具调用（JSON 字符串），仅 role=assistant 且触发了工具调用时有值
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_calls: Option<String>,
+    /// 工具结果消息关联的工具调用 ID，仅 role=tool 时有值
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub tool_call_id: Option<String>,
 }
 
 /// 技能

@@ -50,15 +50,20 @@ pub async fn send_message(
     };
     log_info!("STEP2", "会话信息 | project_id: {:?} | phase: {} | context_chapter: {:?}", project_id, phase, context_chapter_id);
 
-    // 获取历史消息
-    let history: Vec<(String, String)> = {
+    // 获取历史消息（含工具调用相关字段，用于还原 LLM 上下文）
+    let history: Vec<(String, String, Option<String>, Option<String>)> = {
         let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
         let mut stmt = conn
-            .prepare("SELECT role, content FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC")
+            .prepare("SELECT role, content, tool_calls, tool_call_id FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC")
             .map_err(|e| format!("准备查询失败: {}", e))?;
         let rows = stmt
             .query_map(rusqlite::params![conversation_id], |row| {
-                Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+                Ok((
+                    row.get::<_, String>(0)?,
+                    row.get::<_, String>(1)?,
+                    row.get::<_, Option<String>>(2)?,
+                    row.get::<_, Option<String>>(3)?,
+                ))
             })
             .map_err(|e| format!("查询历史消息失败: {}", e))?;
         rows.collect::<Result<Vec<_>, _>>().map_err(|e| format!("读取历史消息失败: {}", e))?
@@ -229,12 +234,16 @@ pub async fn send_message(
         tool_calls: None,
         tool_call_id: None,
     });
-    for (role, msg_content) in &history {
+    for (role, msg_content, tool_calls_str, tool_call_id) in &history {
+        // 还原 tool_calls：从 JSON 字符串解析为 Vec<Value>
+        let tool_calls = tool_calls_str
+            .as_ref()
+            .and_then(|s| serde_json::from_str::<Vec<serde_json::Value>>(s).ok());
         messages.push(crate::models::ChatMessage {
             role: role.clone(),
             content: msg_content.clone(),
-            tool_calls: None,
-            tool_call_id: None,
+            tool_calls,
+            tool_call_id: tool_call_id.clone(),
         });
     }
 
@@ -333,7 +342,7 @@ pub fn abort_generation(cancel_token: State<'_, CancellationTokenState>) -> Resu
     Ok(())
 }
 
-/// 获取会话的历史消息列表
+/// 获取会话的历史消息列表（前端展示用，过滤掉 role=tool 的工具结果消息）
 #[tauri::command]
 pub fn get_messages(
     db: State<'_, DbState>,
@@ -341,7 +350,7 @@ pub fn get_messages(
 ) -> Result<Vec<Message>, String> {
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
     let mut stmt = conn
-        .prepare("SELECT id, conversation_id, role, content, model, created_at FROM messages WHERE conversation_id = ?1 ORDER BY created_at ASC")
+        .prepare("SELECT id, conversation_id, role, content, model, created_at, tool_calls, tool_call_id FROM messages WHERE conversation_id = ?1 AND role != 'tool' ORDER BY created_at ASC")
         .map_err(|e| format!("准备查询失败: {}", e))?;
     let rows = stmt
         .query_map(rusqlite::params![conversation_id], |row| {
@@ -352,6 +361,8 @@ pub fn get_messages(
                 content: row.get(3)?,
                 model: row.get(4)?,
                 created_at: row.get(5)?,
+                tool_calls: row.get(6)?,
+                tool_call_id: row.get(7)?,
             })
         })
         .map_err(|e| format!("查询消息失败: {}", e))?;
