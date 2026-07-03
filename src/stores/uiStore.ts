@@ -2,9 +2,14 @@
 import { create } from 'zustand';
 import type { WritingPhase } from '@/types';
 
+/** 右侧面板选项卡类型 */
+export type PanelTab = 'assistant' | 'operations';
+
 interface UIState {
   /** 当前写作阶段 */
   phase: WritingPhase;
+  /** 右侧面板当前选项卡 */
+  panelTab: PanelTab;
   /** 左侧栏是否展开 */
   sidebarOpen: boolean;
   /** 右侧面板是否展开 */
@@ -22,6 +27,8 @@ interface UIState {
 
   /** 切换写作阶段 */
   setPhase: (phase: WritingPhase) => void;
+  /** 设置面板选项卡 */
+  setPanelTab: (tab: PanelTab) => void;
   /** 切换侧栏 */
   toggleSidebar: () => void;
   /** 切换右侧面板 */
@@ -40,6 +47,7 @@ interface UIState {
 
 export const useUIStore = create<UIState>((set) => ({
   phase: 'ideation',
+  panelTab: 'assistant',
   sidebarOpen: true,
   panelOpen: true,
   theme: 'light',
@@ -49,6 +57,7 @@ export const useUIStore = create<UIState>((set) => ({
   saveStatus: 'saved',
 
   setPhase: (phase) => set({ phase }),
+  setPanelTab: (panelTab) => set({ panelTab }),
 
   toggleSidebar: () => set((state) => ({ sidebarOpen: !state.sidebarOpen })),
 
