@@ -1,8 +1,9 @@
 /** 设定卡列表组件 */
-import React from 'react';
-import { Users, Castle, Globe, Package, Zap, Clock, Trash2 } from 'lucide-react';
+import React, { useState } from 'react';
+import { Users, Castle, Globe, Package, Zap, Clock, Trash2, ChevronDown, ChevronRight } from 'lucide-react';
 import { useSettingsStore } from '@/stores/settingsStore';
 import { useProjectStore } from '@/stores/projectStore';
+import { useUIStore } from '@/stores/uiStore';
 import { CARD_TYPE_LABELS } from '@/types';
 import type { CardType } from '@/types';
 import { clsx } from 'clsx';
@@ -30,13 +31,35 @@ const cardTypeColors: Record<CardType, string> = {
 export const SettingCardList: React.FC = () => {
   const { settingCards, selectCard, createSettingCard, deleteSettingCard } = useSettingsStore();
   const currentProject = useProjectStore((s) => s.currentProject);
+  const { setPanelTab, panelOpen, togglePanel } = useUIStore();
 
-  /* 按类型分组 */
-  const grouped = settingCards.reduce<Record<CardType, typeof settingCards>>((acc, card) => {
-    if (!acc[card.card_type]) acc[card.card_type] = [];
-    acc[card.card_type].push(card);
-    return acc;
-  }, {} as Record<CardType, typeof settingCards>);
+  /* 每个类型分组独立的折叠状态 + 分页可见数量 */
+  const [collapsedTypes, setCollapsedTypes] = useState<Record<string, boolean>>({});
+  const [visibleCountByType, setVisibleCountByType] = useState<Record<string, number>>({});
+
+  /* 每个类型初始显示 5 条，点击"查看更多"再加 10 条 */
+  const INITIAL_VISIBLE = 5;
+  const LOAD_STEP = 10;
+
+  const handleToggleType = (type: string) => {
+    setCollapsedTypes((prev) => ({ ...prev, [type]: !prev[type] }));
+  };
+
+  const handleLoadMore = (type: string) => {
+    setVisibleCountByType((prev) => ({
+      ...prev,
+      [type]: (prev[type] ?? INITIAL_VISIBLE) + LOAD_STEP,
+    }));
+  };
+
+  const handleSelectCard = (card: typeof settingCards[number]) => {
+    selectCard(card);
+    /* 自动展开右侧面板并切换到操作 Tab */
+    setPanelTab('operations');
+    if (!panelOpen) {
+      togglePanel();
+    }
+  };
 
   const handleCreate = async (type: CardType) => {
     if (!currentProject) return;
@@ -48,44 +71,72 @@ export const SettingCardList: React.FC = () => {
     );
   };
 
+  /* 按类型分组 */
+  const grouped = settingCards.reduce<Record<string, typeof settingCards>>((acc, card) => {
+    if (!acc[card.card_type]) acc[card.card_type] = [];
+    acc[card.card_type].push(card);
+    return acc;
+  }, {} as Record<string, typeof settingCards>);
+
   return (
     <div className="py-1">
       {Object.keys(grouped).length === 0 ? (
         <div className="px-3 py-2 text-xs text-text-tertiary">暂无设定卡</div>
       ) : (
-        (Object.entries(grouped) as [CardType, typeof settingCards][]).map(([type, cards]) => (
-          <div key={type} className="mb-1">
-            {/* 类型标题 */}
-            <div className="flex items-center gap-1.5 px-3 py-1 text-xs font-medium text-text-secondary">
-              <span className={cardTypeColors[type]}>{cardTypeIcons[type]}</span>
-              <span>{CARD_TYPE_LABELS[type]}</span>
-              <span className="text-text-tertiary">({cards.length})</span>
-            </div>
+        (Object.entries(grouped) as [string, typeof settingCards][]).map(([type, cards]) => {
+          const collapsed = collapsedTypes[type] ?? false;
+          const visibleCount = visibleCountByType[type] ?? INITIAL_VISIBLE;
+          const visibleCards = collapsed ? [] : cards.slice(0, visibleCount);
+          const hasMore = !collapsed && cards.length > visibleCount;
 
-            {/* 该类型下的设定卡 */}
-            {cards.map((card) => (
-              <div
-                key={card.id}
-                className="group flex items-center gap-1 px-2 py-1 hover:bg-bg-hover rounded-md transition-colors cursor-pointer"
-                onClick={() => selectCard(card)}
+          return (
+            <div key={type} className="mb-1">
+              {/* 类型标题（可点击折叠） */}
+              <button
+                onClick={() => handleToggleType(type)}
+                className="w-full flex items-center gap-1.5 px-2 py-1 text-xs font-medium text-text-secondary hover:bg-bg-hover rounded-md transition-colors"
               >
-                <span className="flex-1 text-xs text-text-primary truncate min-w-0">
-                  {card.name}
-                </span>
-                <button
-                  onClick={(e) => {
-                    e.stopPropagation();
-                    deleteSettingCard(card.id);
-                  }}
-                  className="shrink-0 p-0.5 rounded text-text-tertiary hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
-                  title="删除设定卡"
+                {collapsed ? <ChevronRight size={11} /> : <ChevronDown size={11} />}
+                <span className={cardTypeColors[type as CardType]}>{cardTypeIcons[type as CardType]}</span>
+                <span>{CARD_TYPE_LABELS[type as CardType]}</span>
+                <span className="text-text-tertiary">({cards.length})</span>
+              </button>
+
+              {/* 该类型下的设定卡 */}
+              {visibleCards.map((card) => (
+                <div
+                  key={card.id}
+                  className="group flex items-center gap-1 px-2 py-1 hover:bg-bg-hover rounded-md transition-colors cursor-pointer ml-2"
+                  onClick={() => handleSelectCard(card)}
                 >
-                  <Trash2 size={11} />
+                  <span className="flex-1 text-xs text-text-primary truncate min-w-0">
+                    {card.name}
+                  </span>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      deleteSettingCard(card.id);
+                    }}
+                    className="shrink-0 p-0.5 rounded text-text-tertiary hover:text-error opacity-0 group-hover:opacity-100 transition-opacity"
+                    title="删除设定卡"
+                  >
+                    <Trash2 size={11} />
+                  </button>
+                </div>
+              ))}
+
+              {/* 查看更多 */}
+              {hasMore && (
+                <button
+                  onClick={() => handleLoadMore(type)}
+                  className="w-full text-left px-3 py-1 text-[11px] text-text-tertiary hover:text-accent hover:bg-bg-hover rounded transition-colors ml-2"
+                >
+                  查看更多...
                 </button>
-              </div>
-            ))}
-          </div>
-        ))
+              )}
+            </div>
+          );
+        })
       )}
 
       {/* 快速新建按钮 */}
