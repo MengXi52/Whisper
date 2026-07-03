@@ -82,6 +82,9 @@ pub async fn stream_chat(
         let mut tool_calls_accumulated: Vec<ToolCallResult> = Vec::new();
         let mut chunk_count = 0;
         let mut content_len = 0;
+        // 标记本轮是否触发了工具调用（用于 break 后判断是否需要继续下一轮）
+        // 不能依赖 tool_calls_accumulated.is_empty()，因为在 break 前已清空
+        let mut had_tool_calls = false;
 
         tokio::pin!(stream);
 
@@ -171,6 +174,7 @@ pub async fn stream_chat(
                                     if let Some(finish_reason) = first_choice.get("finish_reason") {
                                         if let Some(reason) = finish_reason.as_str() {
                                             if reason == "tool_calls" {
+                                                had_tool_calls = true;
                                                 log_info!("STREAM", "LLM 返回 tool_calls，共 {} 个 (本轮已收内容: {} 字符, {} chunks)",
                                                     tool_calls_accumulated.len(), content_len, chunk_count);
                                                 for (i, tc) in tool_calls_accumulated.iter().enumerate() {
@@ -288,10 +292,11 @@ pub async fn stream_chat(
             }
         }
 
-        // 如果没有工具调用，返回最终内容
-        if !tool_calls_accumulated.is_empty() {
-            log_info!("STREAM", "有 {} 个 tool_calls，进入第 {} 轮 (累积消息: {} 条)",
-                tool_calls_accumulated.len(), tool_round + 1, messages.len());
+        // 如果本轮触发了工具调用，继续下一轮请求让 LLM 基于工具结果生成最终回复
+        // 注意：不能用 tool_calls_accumulated.is_empty() 判断，因为在 break 前已清空
+        if had_tool_calls {
+            log_info!("STREAM", "本轮已处理 tool_calls，进入第 {} 轮 (累积消息: {} 条)",
+                tool_round + 1, messages.len());
             continue;
         }
 

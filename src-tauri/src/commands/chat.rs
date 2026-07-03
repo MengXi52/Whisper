@@ -301,22 +301,26 @@ pub async fn send_message(
         }
     }
 
-    // 保存助手消息到数据库
+    // 保存助手消息到数据库（仅当有内容时才保存，避免工具调用流程产生空白消息）
     let now = chrono::Utc::now().to_rfc3339();
-    {
+    if !full_content.trim().is_empty() {
         let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
         conn.execute(
             "INSERT INTO messages (id, conversation_id, role, content, model, created_at) VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
             rusqlite::params![assistant_msg_id, conversation_id, "assistant", full_content, use_model, now],
         ).map_err(|e| format!("保存助手消息失败: {}", e))?;
-
+        log_info!("STEP11", "助手消息已保存 | 消息ID: {} | 内容: {} 字符", assistant_msg_id, full_content.len());
+    } else {
+        log_info!("STEP11", "助手最终内容为空，跳过保存（可能 LLM 仅触发工具调用未生成回复）");
+    }
+    {
+        let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
         // 更新会话标题（如果是第一条用户消息）
         conn.execute(
             "UPDATE conversations SET updated_at = ?1, title = CASE WHEN title = '' THEN SUBSTR(?2, 1, 20) ELSE title END WHERE id = ?3",
             rusqlite::params![now, content, conversation_id],
         ).map_err(|e| format!("更新会话失败: {}", e))?;
     }
-    log_info!("STEP11", "助手消息已保存 | 消息ID: {}", assistant_msg_id);
 
     // 发送完成事件
     let done_event = ChunkEvent {
