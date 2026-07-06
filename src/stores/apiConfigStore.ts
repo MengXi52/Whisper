@@ -53,7 +53,10 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
       await tauri.saveApiConfig(data);
       await get().loadApiConfigs();
     } catch (e) {
-      set({ error: String(e), loading: false });
+      const msg = String(e);
+      set({ error: msg, loading: false });
+      /* 重新抛出，让调用方的 try/catch 能捕获并提示用户 */
+      throw e;
     }
   },
 
@@ -62,7 +65,9 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
       await tauri.deleteApiConfig(id);
       await get().loadApiConfigs();
     } catch (e) {
-      set({ error: String(e) });
+      const msg = String(e);
+      set({ error: msg });
+      throw e;
     }
   },
 
@@ -71,7 +76,9 @@ export const useApiConfigStore = create<ApiConfigState>((set, get) => ({
       await tauri.setDefaultApiConfig(id);
       await get().loadApiConfigs();
     } catch (e) {
-      set({ error: String(e) });
+      const msg = String(e);
+      set({ error: msg });
+      throw e;
     }
   },
 

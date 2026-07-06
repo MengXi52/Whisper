@@ -4676,7 +4676,6 @@ dependencies = [
  "docx-rs",
  "eventsource-stream",
  "futures-util",
- "proc-macro2",
  "reqwest 0.12.28",
  "rusqlite",
  "serde",

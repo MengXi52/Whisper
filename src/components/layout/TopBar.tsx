@@ -6,7 +6,7 @@ import { useProjectStore } from '@/stores/projectStore';
 import { PHASE_LABELS } from '@/types';
 import type { WritingPhase } from '@/types';
 import { clsx } from 'clsx';
-import { ApiConfigDialog } from '@/components/settings/ApiConfigDialog';
+import { SettingsPanel } from '@/components/settings/SettingsPanel';
 
 const phases: WritingPhase[] = ['ideation', 'planning', 'writing', 'editing'];
 
@@ -67,7 +67,7 @@ export const TopBar: React.FC = () => {
         </button>
       </div>
 
-      <ApiConfigDialog open={settingsOpen} onClose={() => setSettingsOpen(false)} />
+      <SettingsPanel open={settingsOpen} onClose={() => setSettingsOpen(false)} />
     </header>
   );
 };

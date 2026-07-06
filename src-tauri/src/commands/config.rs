@@ -1,5 +1,6 @@
 use crate::db::DbState;
 use crate::models::ApiConfig;
+use crate::{log_info, log_warn};
 use tauri::State;
 
 /// 保存 API 配置
@@ -14,6 +15,15 @@ pub fn save_api_config(
     model_writing: String,
     is_default: bool,
 ) -> Result<String, String> {
+    log_info!(
+        "save_api_config",
+        "收到参数 | id: {:?} | name: {} | model_writing: {} | is_default: {}",
+        id,
+        name,
+        model_writing,
+        is_default
+    );
+
     let conn = db.0.lock().map_err(|e| format!("获取数据库锁失败: {}", e))?;
 
     // 如果设为默认，先取消其他默认
@@ -25,10 +35,28 @@ pub fn save_api_config(
     match id {
         Some(config_id) => {
             // 更新已有配置
-            conn.execute(
-                "UPDATE api_configs SET name = ?1, base_url = ?2, api_key = ?3, model_thinking = ?4, model_writing = ?5, is_default = ?6 WHERE id = ?7",
-                rusqlite::params![name, base_url, api_key, model_thinking, model_writing, is_default, config_id],
-            ).map_err(|e| format!("更新API配置失败: {}", e))?;
+            let rows = conn
+                .execute(
+                    "UPDATE api_configs SET name = ?1, base_url = ?2, api_key = ?3, model_thinking = ?4, model_writing = ?5, is_default = ?6 WHERE id = ?7",
+                    rusqlite::params![name, base_url, api_key, model_thinking, model_writing, is_default, config_id],
+                )
+                .map_err(|e| format!("更新API配置失败: {}", e))?;
+
+            if rows == 0 {
+                log_warn!(
+                    "save_api_config",
+                    "UPDATE 影响 0 行 | config_id: {}",
+                    config_id
+                );
+                return Err(format!("未找到要更新的配置（id={}），可能已被删除", config_id));
+            }
+
+            log_info!(
+                "save_api_config",
+                "更新成功 | id: {} | 影响行数: {}",
+                config_id,
+                rows
+            );
             Ok(config_id)
         }
         None => {
@@ -37,7 +65,10 @@ pub fn save_api_config(
             conn.execute(
                 "INSERT INTO api_configs (id, name, base_url, api_key, model_thinking, model_writing, is_default) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)",
                 rusqlite::params![new_id, name, base_url, api_key, model_thinking, model_writing, is_default],
-            ).map_err(|e| format!("创建API配置失败: {}", e))?;
+            )
+            .map_err(|e| format!("创建API配置失败: {}", e))?;
+
+            log_info!("save_api_config", "新建成功 | id: {}", new_id);
             Ok(new_id)
         }
     }

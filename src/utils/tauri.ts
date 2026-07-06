@@ -85,11 +85,11 @@ export const abortGeneration = () => tauriInvoke<void>('abort_generation');
 /** 创建会话 */
 export const createConversation = (data: Omit<import('@/types').Conversation, 'id' | 'created_at' | 'updated_at'>) =>
   tauriInvoke<import('@/types').Conversation>('create_conversation', {
-    project_id: data.project_id,
+    projectId: data.project_id,
     title: data.title,
     phase: data.phase,
-    skill_ids: data.skill_ids,
-    context_chapter_id: data.context_chapter_id,
+    skillIds: data.skill_ids,
+    contextChapterId: data.context_chapter_id,
   });
 
 /** 获取会话列表 */
@@ -141,11 +141,11 @@ export const saveApiConfig = (data: Omit<import('@/types').ApiConfig, 'id'> & { 
   tauriInvoke<import('@/types').ApiConfig>('save_api_config', {
     id: data.id,
     name: data.name,
-    base_url: data.base_url,
-    api_key: data.api_key,
-    model_thinking: data.model_thinking,
-    model_writing: data.model_writing,
-    is_default: data.is_default,
+    baseUrl: data.base_url,
+    apiKey: data.api_key,
+    modelThinking: data.model_thinking,
+    modelWriting: data.model_writing,
+    isDefault: data.is_default,
   });
 
 /** 删除 API 配置 */
